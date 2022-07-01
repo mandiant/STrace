@@ -1,0 +1,39 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32526.322
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "STrace", "STrace\STrace.vcxproj", "{EFE6E1B0-82E5-4AF2-8423-FA89F34AF1F2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{4349310C-30F9-48A9-9AE7-13D181F958B5} = {4349310C-30F9-48A9-9AE7-13D181F958B5}
+		{C09F1082-CDCA-4320-AB91-CC3EAB12560C} = {C09F1082-CDCA-4320-AB91-CC3EAB12560C}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "STraceCLI", "STraceCLI\STraceCLI.vcxproj", "{4349310C-30F9-48A9-9AE7-13D181F958B5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FileDeleteRecordPlugin", "FileDeleteRecordPlugin\FileDeleteRecordPlugin.vcxproj", "{C09F1082-CDCA-4320-AB91-CC3EAB12560C}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LogSyscallsPlugin", "LogSyscallsPlugin\LogSyscallsPlugin.vcxproj", "{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EFE6E1B0-82E5-4AF2-8423-FA89F34AF1F2}.Release|x64.ActiveCfg = Release|x64
+		{EFE6E1B0-82E5-4AF2-8423-FA89F34AF1F2}.Release|x64.Build.0 = Release|x64
+		{EFE6E1B0-82E5-4AF2-8423-FA89F34AF1F2}.Release|x64.Deploy.0 = Release|x64
+		{4349310C-30F9-48A9-9AE7-13D181F958B5}.Release|x64.ActiveCfg = Release|x64
+		{4349310C-30F9-48A9-9AE7-13D181F958B5}.Release|x64.Build.0 = Release|x64
+		{C09F1082-CDCA-4320-AB91-CC3EAB12560C}.Release|x64.ActiveCfg = Release|x64
+		{C09F1082-CDCA-4320-AB91-CC3EAB12560C}.Release|x64.Build.0 = Release|x64
+		{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}.Release|x64.ActiveCfg = Release|x64
+		{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6C23C13C-B6AA-4761-A31A-B1E9E32361C3}
+	EndGlobalSection
+EndGlobal
