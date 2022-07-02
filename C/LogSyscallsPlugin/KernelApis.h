@@ -306,3 +306,17 @@ extern "C" __declspec(dllimport) NTSTATUS NTAPI NtQueryInformationFile(HANDLE Fi
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwQueryObject(HANDLE Handle,OBJECT_INFORMATION_CLASS ObjectInformationClass,PVOID ObjectInformation,ULONG ObjectInformationLength,PULONG ReturnLength);
 
 extern "C" __declspec(dllimport) int __cdecl _snprintf(char*, size_t, const char*, ...);
+
+enum class LiveKernelDumpFlags : ULONG {
+    KernelPages = 0,
+    UserAndKernelPages = 1,
+    MiniDump = 2,
+    HyperVAndKernelPages = 4,
+    UserAndHyperVAndKernelPages = 5 // UserAndKernelPages & HyperVAndKernelPages
+};
+
+// C:\Windows\LiveKernelReports OR path within HKLM\system\currentcontrolset\control\crashcontrol\livekernelreports
+// ComponentName: Name of folder created in report directory
+// BugCheckCode: Code shown to user in the generated .dmp file when loaded in windbg
+// P1 - P4 arbitrary parameters, shown to user as BUGCHECK_P1-... in the generated .dmp file when loaded in windbg
+extern "C" __declspec(dllimport) void NTAPI DbgkWerCaptureLiveKernelDump(const wchar_t* ComponentName, ULONG BugCheckCode, ULONG_PTR P1, ULONG_PTR P2, ULONG_PTR P3, ULONG_PTR P4, LiveKernelDumpFlags flags);

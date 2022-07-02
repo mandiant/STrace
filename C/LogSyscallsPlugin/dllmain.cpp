@@ -1895,6 +1895,12 @@ void PrintStackTrace(CallerInfo& callerinfo) {
     }
 }
 
+void LiveKernelDump(LiveKernelDumpFlags flags)
+{
+    const auto MANUALLY_INITIATED_CRASH = 0xE2;
+    DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
+}
+
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
@@ -1909,6 +1915,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     char sprintf_tmp_buf[256] = { 0 };
 
     if (strcmp(callerinfo.processName, "test.exe") == 0) {
+        LiveKernelDump(LiveKernelDumpFlags::KernelPages);
         LOG_INFO("[ENTRY] %s %s\r\n", get_probe_name((PROBE_IDS)probeId), callerinfo.processName);
         auto argTypes = get_probe_argtypes((PROBE_IDS)probeId);
 
