@@ -80,16 +80,8 @@ public:
 	bool isWow64;
 
 	CallerInfo() {
-		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
-		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
-		if (frames) {
-			frameDepth = FRAME_DEPTH;
-			memset(frames, 0, frameArraySize);
-		} else {
-			// set depth to zero to hopefully avoid anyone iterating the null buffer
-			frameDepth = 0;
-			return;
-		}
+		frames = nullptr;
+		frameDepth = 0;
 
 		memset(processName, 0, sizeof(processName));
 
@@ -105,7 +97,7 @@ public:
 	~CallerInfo() {
 		if (frames) {
 			ExFreePoolWithTag(frames, DRIVER_POOL_TAG);
-			frames = 0;
+			frames = nullptr;
 		}
 	}
 
@@ -119,15 +111,20 @@ public:
 	}
 
 	__forceinline void CaptureStackTrace() {
-		// our allocation failed in the constructor :(
-		if (!frames) {
-			return;
-		}
-
 		uint64_t StackTraceData[FRAME_DEPTH] = { 0 };
 
 		// we forceinlined, so *this* frame should not exist, so we can skip nothing
 		const auto StackTraceFramesCount = KphCaptureStackBackTrace(0, FRAME_DEPTH, (PVOID*)StackTraceData, 0);
+
+		// trace done, alloc our copy
+		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
+		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
+		if (frames) {
+			frameDepth = FRAME_DEPTH;
+			memset(frames, 0, frameArraySize);
+		} else {
+			return;
+		}
 
 		// copy addresses over first
 		for (uint32_t i = 0; i < StackTraceFramesCount; i++) {
@@ -141,8 +138,11 @@ public:
 				// fill out the module info if it's found, and not set yet
 				if (frames[i].modulebase == 0 && frameaddress >= base && frameaddress < (base + size)) {
 					frames[i].modulebase = base;
-					strcpy_s(frames[i].modulePath, modulePath);
-					frames[i].modulePath[sizeof(CallerInfo::StackFrame::modulePath) - 1] = 0;
+					if (strlen(modulePath) <= sizeof(CallerInfo::StackFrame::modulePath)) {
+						strcpy_s(frames[i].modulePath, modulePath);
+					} else {
+						strcpy_s(frames[i].modulePath, "NAME_TOO_LONG");
+					}
 				}
 			}
 		});
@@ -155,8 +155,11 @@ public:
 				// fill out the module info if it's found, and not set yet
 				if (frames[i].modulebase == 0 && frameaddress >= base && frameaddress < (base + size)) {
 					frames[i].modulebase = base;
-					strcpy_s(frames[i].modulePath, modulePath);
-					frames[i].modulePath[sizeof(CallerInfo::StackFrame::modulePath) - 1] = 0;
+					if (strlen(modulePath) <= sizeof(CallerInfo::StackFrame::modulePath)) {
+						strcpy_s(frames[i].modulePath, modulePath);
+					} else {
+						strcpy_s(frames[i].modulePath, "NAME_TOO_LONG");
+					}
 				}
 			}
 		});
@@ -259,6 +262,7 @@ private:
 	}
 };
 
+typedef bool(*tStpIsTarget)(CallerInfo& callerinfo);
 typedef void(*tStpCallbackEntry)(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 typedef void(*tStpCallbackReturn)(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 

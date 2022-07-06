@@ -1901,6 +1901,14 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
     DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
 }
 
+extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
+    if (strcmp(callerinfo.processName, "rundll32.exe") == 0) {
+        return true;
+    }
+    return false;
+}
+ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
+
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
@@ -1914,224 +1922,221 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     // !!BEWARE OF HOW MUCH STACK SPACE IS USED!!
     char sprintf_tmp_buf[256] = { 0 };
 
-    if (strcmp(callerinfo.processName, "test.exe") == 0) {
-        LiveKernelDump(LiveKernelDumpFlags::KernelPages);
-        LOG_INFO("[ENTRY] %s %s\r\n", get_probe_name((PROBE_IDS)probeId), callerinfo.processName);
-        auto argTypes = get_probe_argtypes((PROBE_IDS)probeId);
+    LOG_INFO("[ENTRY] %s %s\r\n", get_probe_name((PROBE_IDS)probeId), callerinfo.processName);
+    auto argTypes = get_probe_argtypes((PROBE_IDS)probeId);
 
-        String argsString;
-        uint8_t argIdx = 0;
-        for (uint64_t type_id : argTypes) {
-            uint64_t argValue = ctx.read_argument(argIdx);
-            switch (type_id) {
-            case get_type_id<MY_BOOLEAN>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN: %s", argIdx, argValue ? "TRUE" : "FALSE");
-                break;
-            }
-            case get_type_id<MY_PBOOLEAN>(): {
-                BOOLEAN val = readUserArgPtr<PBOOLEAN>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN*: %X->(%s)", argIdx, argValue, val ? "TRUE" : "FALSE");
-                break;
-            }
-            case get_type_id<UCHAR>():
-            case get_type_id<CHAR>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - CHAR: %02X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<UINT16>():
-            case get_type_id<INT16>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - INT16: %04X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<PUINT16>():
-            case get_type_id<PINT16>(): {
-                UINT16 val = readUserArgPtr<PUINT16>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - INT16*: %X->(%04X)", argIdx, argValue, val);
-                break;
-            }
-            case get_type_id<UINT32>():
-            case get_type_id<INT32>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - INT32: %X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<PUINT32>():
-            case get_type_id<PINT32>(): {
-                UINT32 val = readUserArgPtr<PUINT32>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - INT32*: %X->(%X)", argIdx, argValue, val);
-                break;
-            }
-            case get_type_id<ULONG>():
-            case get_type_id<LONG>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - LONG: %X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<PULONG>():
-            case get_type_id<PLONG>(): {
-                ULONG val = readUserArgPtr<PULONG>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - LONG*: %X->(%X)", argIdx, argValue, val);
-                break;
-            }
-            case get_type_id<ULONGLONG>():
-            case get_type_id<LONGLONG>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG: %X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<PLONGLONG>():
-            case get_type_id<PULONGLONG>(): {
-                ULONGLONG val = readUserArgPtr<PULONGLONG>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG*: %X->(%X)", argIdx, argValue, val);
-                break;
-            }
-            case get_type_id<PVOID>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - PVOID: %X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<PVOID*>(): {
-                PVOID val = readUserArgPtr<PVOID*>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - PVOID*: %X->(%X)", argIdx, argValue, val);
-                break;
-            }
-            case get_type_id<PSTR>(): {
-                char tmp[256] = { 0 };
-
-                uint8_t i = 0;
-                for (; i < sizeof(tmp); i++) {
-                    if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((char*)argValue) + i), 1, 1, TRUE))
-                        break;
-
-                    if (tmp[i] == 0)
-                        break;
-                }
-
-                if (i > 0) {
-                    tmp[i] = 0; // to be safe
-                    string_printf(argsString, sprintf_tmp_buf, "%d - CHAR*: %s", argIdx, tmp);
-                }
-                break;
-            }
-            case get_type_id<PWSTR>(): {
-                WCHAR tmp[128] = { 0 };
-
-                uint8_t i = 0;
-                for (; i < sizeof(tmp); i++) {
-                    if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((wchar_t*)argValue) + i), sizeof(WCHAR), sizeof(WCHAR), TRUE))
-                        break;
-
-                    if (tmp[i] == 0)
-                        break;
-                }
-
-                if (i > 0) {
-                    tmp[i] = 0; // to be safe
-                    string_printf(argsString, sprintf_tmp_buf, "%d - WCHAR*: %S", argIdx, tmp);
-                }
-                break;
-            }
-            case get_type_id<MY_VIRTUAL_MEMORY_INFORMATION_CLASS>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - VM_INFO: %s", argIdx, get_enum_value_name<VIRTUAL_MEMORY_INFORMATION_CLASS>(argValue));
-                break;
-            }
-            case get_type_id<MY_PROCESSINFOCLASS>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - PROC_INFO_CLASS: %s", argIdx, get_enum_value_name<PROCESSINFOCLASS>(argValue));
-                break;
-            }
-            case get_type_id<MY_TOKENINFOCLASS>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - TOKEN_INFO_CLASS: %s", argIdx, get_enum_value_name<TOKEN_INFO_CLASS>(argValue));
-                break;
-            }
-            case get_type_id<MY_THREADINFOCLASS>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - THREADINFOCLASS: %s", argIdx, get_enum_value_name<THREADINFOCLASS>(argValue));
-                break;
-            }
-            case get_type_id<MY_PMEMORY_RANGE_ENTRY>(): {
-                MEMORY_RANGE_ENTRY range = readUserArgPtr<PMEMORY_RANGE_ENTRY>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - VA: %X (Size: %X)", argIdx, range.VirtualAddress, range.NumberOfBytes);
-                break;
-            }
-            case get_type_id<MY_HANDLE>(): {
-                string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE: %X", argIdx, argValue);
-                break;
-            }
-            case get_type_id<MY_PHANDLE>(): {
-                HANDLE handle = readUserArgPtr<PHANDLE>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE*: %X->(%X)", argIdx, argValue, handle);
-                break;
-            }
-            case get_type_id<MY_ACCESS_MASK>(): {
-                MY_ACCESS_MASK mask = (MY_ACCESS_MASK)argValue;
-                string_printf(argsString, sprintf_tmp_buf, "%d - ACCESS_MASK: %X", argIdx, mask);
-                if (mask & GENERIC_READ || mask & GENERIC_WRITE || mask & GENERIC_EXECUTE || mask & FILE_READ_DATA || mask & FILE_READ_ATTRIBUTES ||
-                    mask & FILE_READ_EA || mask & FILE_WRITE_DATA || mask & FILE_WRITE_ATTRIBUTES || mask & FILE_WRITE_EA || mask & FILE_APPEND_DATA || mask & FILE_EXECUTE) {
-                    string_printf(argsString, sprintf_tmp_buf, " (");
-                    if (mask & GENERIC_READ) {
-                        string_printf(argsString, sprintf_tmp_buf, "GENERIC_READ|");
-                    }
-                    if (mask & GENERIC_WRITE) {
-                        string_printf(argsString, sprintf_tmp_buf, "GENERIC_WRITE|");
-                    }
-                    if (mask & GENERIC_EXECUTE) {
-                        string_printf(argsString, sprintf_tmp_buf, "GENERIC_EXECUTE|");
-                    }
-                    if (mask & FILE_READ_DATA) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_READ_DATA|");
-                    }
-                    if (mask & FILE_READ_ATTRIBUTES) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_READ_ATTRIBUTES|");
-                    }
-                    if (mask & FILE_READ_EA) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_READ_EA|");
-                    }
-                    if (mask & FILE_WRITE_DATA) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_DATA|");
-                    }
-                    if (mask & FILE_WRITE_ATTRIBUTES) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_ATTRIBUTES|");
-                    }
-                    if (mask & FILE_WRITE_EA) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_EA|");
-                    }
-                    if (mask & FILE_APPEND_DATA) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_APPEND_DATA|");
-                    }
-                    if (mask & FILE_EXECUTE) {
-                        string_printf(argsString, sprintf_tmp_buf, "FILE_EXECUTE|");
-                    }
-                    string_printf(argsString, sprintf_tmp_buf, ")");
-                }
-                break;
-            }
-            case get_type_id<PLARGE_INTEGER>(): {
-                LARGE_INTEGER largeInt = readUserArgPtr<PLARGE_INTEGER>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - LARGE_INTEGER: %08X", argIdx, largeInt.QuadPart);
-                break;
-            }
-            case get_type_id<PUNICODE_STRING>(): {
-                UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(argValue, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - USTR: %wZ", argIdx, &ustr);
-                break;
-            }
-            case get_type_id<POBJECT_ATTRIBUTES>(): {
-                OBJECT_ATTRIBUTES attrs = readUserArgPtr<POBJECT_ATTRIBUTES>(argValue, g_Apis);
-                UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(attrs.ObjectName, g_Apis);
-                string_printf(argsString, sprintf_tmp_buf, "%d - OBJ_ATTRS::USTR: %wZ", argIdx, &ustr);
-                break;
-            }
-            default:
-                string_printf(argsString, sprintf_tmp_buf, "%d - NOT_IMPLEMENTED", argIdx);
-                break;
-            }
-
-            // seperate args if not at last one
-            if (argIdx != argTypes.size() - 1) {
-                string_printf(argsString, sprintf_tmp_buf, ", ");
-            }
-            argIdx++;
+    String argsString;
+    uint8_t argIdx = 0;
+    for (uint64_t type_id : argTypes) {
+        uint64_t argValue = ctx.read_argument(argIdx);
+        switch (type_id) {
+        case get_type_id<MY_BOOLEAN>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN: %s", argIdx, argValue ? "TRUE" : "FALSE");
+            break;
         }
-        if (argsString.size()) {
-            LOG_INFO("Args(%s)\r\n", argsString.data());
+        case get_type_id<MY_PBOOLEAN>(): {
+            BOOLEAN val = readUserArgPtr<PBOOLEAN>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN*: %X->(%s)", argIdx, argValue, val ? "TRUE" : "FALSE");
+            break;
         }
-        PrintStackTrace(callerinfo);
+        case get_type_id<UCHAR>():
+        case get_type_id<CHAR>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - CHAR: %02X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<UINT16>():
+        case get_type_id<INT16>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - INT16: %04X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<PUINT16>():
+        case get_type_id<PINT16>(): {
+            UINT16 val = readUserArgPtr<PUINT16>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - INT16*: %X->(%04X)", argIdx, argValue, val);
+            break;
+        }
+        case get_type_id<UINT32>():
+        case get_type_id<INT32>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - INT32: %X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<PUINT32>():
+        case get_type_id<PINT32>(): {
+            UINT32 val = readUserArgPtr<PUINT32>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - INT32*: %X->(%X)", argIdx, argValue, val);
+            break;
+        }
+        case get_type_id<ULONG>():
+        case get_type_id<LONG>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - LONG: %X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<PULONG>():
+        case get_type_id<PLONG>(): {
+            ULONG val = readUserArgPtr<PULONG>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - LONG*: %X->(%X)", argIdx, argValue, val);
+            break;
+        }
+        case get_type_id<ULONGLONG>():
+        case get_type_id<LONGLONG>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG: %X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<PLONGLONG>():
+        case get_type_id<PULONGLONG>(): {
+            ULONGLONG val = readUserArgPtr<PULONGLONG>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG*: %X->(%X)", argIdx, argValue, val);
+            break;
+        }
+        case get_type_id<PVOID>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - PVOID: %X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<PVOID*>(): {
+            PVOID val = readUserArgPtr<PVOID*>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - PVOID*: %X->(%X)", argIdx, argValue, val);
+            break;
+        }
+        case get_type_id<PSTR>(): {
+            char tmp[256] = { 0 };
+
+            uint8_t i = 0;
+            for (; i < sizeof(tmp); i++) {
+                if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((char*)argValue) + i), 1, 1, TRUE))
+                    break;
+
+                if (tmp[i] == 0)
+                    break;
+            }
+
+            if (i > 0) {
+                tmp[i] = 0; // to be safe
+                string_printf(argsString, sprintf_tmp_buf, "%d - CHAR*: %s", argIdx, tmp);
+            }
+            break;
+        }
+        case get_type_id<PWSTR>(): {
+            WCHAR tmp[128] = { 0 };
+
+            uint8_t i = 0;
+            for (; i < sizeof(tmp); i++) {
+                if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((wchar_t*)argValue) + i), sizeof(WCHAR), sizeof(WCHAR), TRUE))
+                    break;
+
+                if (tmp[i] == 0)
+                    break;
+            }
+
+            if (i > 0) {
+                tmp[i] = 0; // to be safe
+                string_printf(argsString, sprintf_tmp_buf, "%d - WCHAR*: %S", argIdx, tmp);
+            }
+            break;
+        }
+        case get_type_id<MY_VIRTUAL_MEMORY_INFORMATION_CLASS>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - VM_INFO: %s", argIdx, get_enum_value_name<VIRTUAL_MEMORY_INFORMATION_CLASS>(argValue));
+            break;
+        }
+        case get_type_id<MY_PROCESSINFOCLASS>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - PROC_INFO_CLASS: %s", argIdx, get_enum_value_name<PROCESSINFOCLASS>(argValue));
+            break;
+        }
+        case get_type_id<MY_TOKENINFOCLASS>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - TOKEN_INFO_CLASS: %s", argIdx, get_enum_value_name<TOKEN_INFO_CLASS>(argValue));
+            break;
+        }
+        case get_type_id<MY_THREADINFOCLASS>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - THREADINFOCLASS: %s", argIdx, get_enum_value_name<THREADINFOCLASS>(argValue));
+            break;
+        }
+        case get_type_id<MY_PMEMORY_RANGE_ENTRY>(): {
+            MEMORY_RANGE_ENTRY range = readUserArgPtr<PMEMORY_RANGE_ENTRY>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - VA: %X (Size: %X)", argIdx, range.VirtualAddress, range.NumberOfBytes);
+            break;
+        }
+        case get_type_id<MY_HANDLE>(): {
+            string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE: %X", argIdx, argValue);
+            break;
+        }
+        case get_type_id<MY_PHANDLE>(): {
+            HANDLE handle = readUserArgPtr<PHANDLE>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE*: %X->(%X)", argIdx, argValue, handle);
+            break;
+        }
+        case get_type_id<MY_ACCESS_MASK>(): {
+            MY_ACCESS_MASK mask = (MY_ACCESS_MASK)argValue;
+            string_printf(argsString, sprintf_tmp_buf, "%d - ACCESS_MASK: %X", argIdx, mask);
+            if (mask & GENERIC_READ || mask & GENERIC_WRITE || mask & GENERIC_EXECUTE || mask & FILE_READ_DATA || mask & FILE_READ_ATTRIBUTES ||
+                mask & FILE_READ_EA || mask & FILE_WRITE_DATA || mask & FILE_WRITE_ATTRIBUTES || mask & FILE_WRITE_EA || mask & FILE_APPEND_DATA || mask & FILE_EXECUTE) {
+                string_printf(argsString, sprintf_tmp_buf, " (");
+                if (mask & GENERIC_READ) {
+                    string_printf(argsString, sprintf_tmp_buf, "GENERIC_READ|");
+                }
+                if (mask & GENERIC_WRITE) {
+                    string_printf(argsString, sprintf_tmp_buf, "GENERIC_WRITE|");
+                }
+                if (mask & GENERIC_EXECUTE) {
+                    string_printf(argsString, sprintf_tmp_buf, "GENERIC_EXECUTE|");
+                }
+                if (mask & FILE_READ_DATA) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_READ_DATA|");
+                }
+                if (mask & FILE_READ_ATTRIBUTES) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_READ_ATTRIBUTES|");
+                }
+                if (mask & FILE_READ_EA) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_READ_EA|");
+                }
+                if (mask & FILE_WRITE_DATA) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_DATA|");
+                }
+                if (mask & FILE_WRITE_ATTRIBUTES) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_ATTRIBUTES|");
+                }
+                if (mask & FILE_WRITE_EA) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_EA|");
+                }
+                if (mask & FILE_APPEND_DATA) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_APPEND_DATA|");
+                }
+                if (mask & FILE_EXECUTE) {
+                    string_printf(argsString, sprintf_tmp_buf, "FILE_EXECUTE|");
+                }
+                string_printf(argsString, sprintf_tmp_buf, ")");
+            }
+            break;
+        }
+        case get_type_id<PLARGE_INTEGER>(): {
+            LARGE_INTEGER largeInt = readUserArgPtr<PLARGE_INTEGER>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - LARGE_INTEGER: %08X", argIdx, largeInt.QuadPart);
+            break;
+        }
+        case get_type_id<PUNICODE_STRING>(): {
+            UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(argValue, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - USTR: %wZ", argIdx, &ustr);
+            break;
+        }
+        case get_type_id<POBJECT_ATTRIBUTES>(): {
+            OBJECT_ATTRIBUTES attrs = readUserArgPtr<POBJECT_ATTRIBUTES>(argValue, g_Apis);
+            UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(attrs.ObjectName, g_Apis);
+            string_printf(argsString, sprintf_tmp_buf, "%d - OBJ_ATTRS::USTR: %wZ", argIdx, &ustr);
+            break;
+        }
+        default:
+            string_printf(argsString, sprintf_tmp_buf, "%d - NOT_IMPLEMENTED", argIdx);
+            break;
+        }
+
+        // seperate args if not at last one
+        if (argIdx != argTypes.size() - 1) {
+            string_printf(argsString, sprintf_tmp_buf, ", ");
+        }
+        argIdx++;
     }
+    if (argsString.size()) {
+        LOG_INFO("Args(%s)\r\n", argsString.data());
+    }
+    PrintStackTrace(callerinfo);
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackEntry, tStpCallbackEntryPlugin, "StpCallbackEntry does not match the interface type");
 

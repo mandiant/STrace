@@ -17,12 +17,13 @@ public:
     }
     
     // Must free old plugin data before setting new one
-    bool setPluginData(uint64_t base, tStpCallbackEntryPlugin entry, tStpCallbackReturnPlugin ret, tStpInitialize init, tStpDeInitialize deinit) {
+    bool setPluginData(uint64_t base, tStpIsTarget istarget, tStpCallbackEntryPlugin entry, tStpCallbackReturnPlugin ret, tStpInitialize init, tStpDeInitialize deinit) {
         pCallbackEntry = entry;
         pCallbackReturn = ret;
         pInitialize = init;
         pDeInitialize = deinit;
-        
+        pIsTarget = istarget;
+
         // set pImageBase last since it's used atomically for isLoaded
         auto expected = pImageBase;
         auto atomicGot = (uint64_t)_InterlockedCompareExchange64((volatile LONG64*)&pImageBase, base, expected);
@@ -45,6 +46,7 @@ public:
         return false;
     }
 
+    tStpIsTarget pIsTarget;
     tStpCallbackEntryPlugin pCallbackEntry;
     tStpCallbackReturnPlugin pCallbackReturn;
 
@@ -58,6 +60,7 @@ private:
         pCallbackEntry = 0;
         pCallbackReturn = 0;
         pDeInitialize = 0;
+        pIsTarget = 0;
     }
 
     volatile uint64_t pImageBase;
@@ -107,15 +110,15 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         CallerInfo callerInfo;
-        callerInfo.CaptureStackTrace();
+        if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
+            callerInfo.CaptureStackTrace();
 
-        MachineState ctx = { 0 };
-        ctx.pRegArgs = pArgs;
-        ctx.regArgsSize = pArgSize;
-        ctx.pStackArgs = (uint64_t*)pStackArgs;
-        ctx.paramCount = paramCount;
+            MachineState ctx = { 0 };
+            ctx.pRegArgs = pArgs;
+            ctx.regArgsSize = pArgSize;
+            ctx.pStackArgs = (uint64_t*)pStackArgs;
+            ctx.paramCount = paramCount;
 
-        if (pluginData.isLoaded() && pluginData.pCallbackEntry) {
             pluginData.pCallbackEntry(pService, probeId, ctx, callerInfo);
         }
     }
@@ -136,14 +139,13 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         CallerInfo callerInfo;
+        if (pluginData.isLoaded() && pluginData.pCallbackReturn && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
+            MachineState ctx = { 0 };
+            ctx.pRegArgs = pArgs;
+            ctx.regArgsSize = pArgSize;
+            ctx.pStackArgs = (uint64_t*)pStackArgs;
+            ctx.paramCount = paramCount;
 
-        MachineState ctx = { 0 };
-        ctx.pRegArgs = pArgs;
-        ctx.regArgsSize = pArgSize;
-        ctx.pStackArgs = (uint64_t*)pStackArgs;
-        ctx.paramCount = paramCount;
-
-        if (pluginData.isLoaded() && pluginData.pCallbackReturn) {
             pluginData.pCallbackReturn(pService, probeId, ctx, callerInfo);
         }
     }
@@ -304,9 +306,10 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
         auto ret = (tStpCallbackReturnPlugin)g_DllMapper.getExport(dllBase, "StpCallbackReturn");
         auto init = (tStpInitialize)g_DllMapper.getExport(dllBase, "StpInitialize");
         auto deinit = (tStpDeInitialize)g_DllMapper.getExport(dllBase, "StpDeInitialize");
-        
+        auto istarget = (tStpIsTarget)g_DllMapper.getExport(dllBase, "StpIsTarget");
+
         uint32_t tries = 0;
-        while (!pluginData.setPluginData(dllBase, entry, ret, init, deinit)) {
+        while (!pluginData.setPluginData(dllBase, istarget, entry, ret, init, deinit)) {
             if (tries++ >= 10) {
                 LOG_ERROR("[!] Atomic plugin load failed\r\n");
                 status = STATUS_UNSUCCESSFUL;

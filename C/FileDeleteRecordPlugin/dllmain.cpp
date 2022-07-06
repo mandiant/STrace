@@ -61,6 +61,11 @@ void PrintStackTrace(CallerInfo& callerinfo) {
     }
 }
 
+extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
+    return true;
+}
+ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
+
 /**
 pService: Pointer to system service from SSDT/SSSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback

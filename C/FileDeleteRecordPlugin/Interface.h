@@ -81,6 +81,7 @@ public:
 	bool isWow64;
 };
 
+typedef bool(*tStpIsTarget)(CallerInfo& callerinfo);
 typedef void(*tStpCallbackEntryPlugin)(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo);
 typedef void(*tStpCallbackReturnPlugin)(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo);
 typedef void(*tStpInitialize)(PluginApis& pApis);

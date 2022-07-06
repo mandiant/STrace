@@ -1,0 +1,27 @@
+# 1 - Intro
+
+Hello, my name is stephen eckels and today I'll be presenting a tool I call STrace. This is a reimplementation of Microsoft DTrace system
+
+# 2 - About Me
+
+A little about me, I work on Mandiant's FLARE team. I do alot of malware RE, as well as research and development of malware tooling. Besides this I like to do open source developement and I focus on hooking techniques alot. I'm experienced with both frontend and backend languages and development, prior to my move into security I did system architecture design and embedded device software development. Outside of work I really enjoy slacklining, riding my electric mountainboard and gaming.
+
+# 3 - Outline
+
+This talk today is structured in 3 parts. First I'll familiarize you with what dtrace is exactly and why it's interesting. Then we'll start to migrate into some of the paint points their implementation has. Next I'll describe how their system is architected from a high level and how it interfaces with the windows kernel. Knowing a bit about the interns I'll then describe how we can insert ourselves into the boot process DTrace follows, document the kernel interfaces it uses, and cover some neat tricks like how they access potentially paged out memory.
+
+Finally, once we have a thorough understanding of dtrace and what it provides, I'll introduce STrace and compare the two designs. I'll detour into the painful implementation process I followed, where I first wrote the system in Rust and WASM, then re-wrote the entire thing in C++ with a new design in mind. And to end it all I'll cover how STrace generates its own symbolicated stack traces without using any Microsoft symbol APIs.
+
+# 4 - DTrace Intro
+
+The language and system known as DTrace was originally created by Sun Microsystems, then later acquired by Oracle. An initiative known as OpenDTrace began around 2016 which open sourced this system, and microsoft later ported this to windows sometime around 2018. At it's core, DTrace is a diagnostic tracing system. It allows a user to write scripts that register probes. These probes then fire on specific conditions the user defines, and within probe callbacks users are free to handle the event however they want - such as to log data or perform a limited set of side effects. Multiple types of probes are supported, each of which provides a different data source. This talk will only cover syscall probes, my research did not cover any other probe mechanism. User scripts are written in the D Language and execute inside a VM within the NT kernel.
+
+To the right is an example dtrace script to set a syscall probe on NtCreateFile. You'll notice keywords like copyin, printf, ustack, lkd, and under the entry probe a set of conditions for when the probe should fire. This example simple prints the file name being opened. And if the file open fails, a live system dump will be generated. 
+
+# 5 - Advanced DTrace Examples
+
+Although powerful, the dtrace system has some sharp edges that make using it difficult and a bit painful. One of these it how memory must be accessed. DTrace may touch arguments from usermode before the syscall does, so memory can be paged out and innaccessible. This memory can't just be paged in as DTrace executes at a very high IRQL. To workaround this, scripts sometimes have to record points to arguments, then access them after the syscall is executed and pages the arguments in. Notice the usage of self here, we'll come back to that.
+
+It's also difficult to print all arguments nicely. The D Language is fairly simple and simple things like printing an enumeration nicely can become very very verbose. String operations especially can be painful. Wide strings are not well supported, and conversion and string manipulation routines are for the most part not provided by the language. Creating helpers to workaround these limitations isn't easy either as the language doesn't support user defined functions, loops, or have a pre-processor. Defines and the neat trick above to pass scripts through a C pre-processor can be used to somwhat help but overall writing in the D language is a painful and verbose experience.
+
+# 6 - DTrace shortcomings
