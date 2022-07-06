@@ -46,7 +46,7 @@ bool ManualMapper::loadImage(char* pBase) {
 	int64_t dwDelta = (int64_t)(pBase - pOptionalHeader->ImageBase);
 	if (dwDelta) {
 		if (!pOptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size) {
-			LOG_ERROR("[!] image not allocated at preffered base, but has no relocations, loading will attempt to continue");
+			LOG_ERROR("[!] image not allocated at preffered base, but has no relocations, loading will attempt to continue\r\n");
 		}
 
 		auto dwLimit = (uint64_t)pBase + pOptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress + pOptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
@@ -115,7 +115,7 @@ bool ManualMapper::loadImage(char* pBase) {
 			for (; *pThunkRef; ++pThunkRef, ++pFuncRef) {
 				if (IMAGE_SNAP_BY_ORDINAL64(*pThunkRef)) {
 					USHORT ordinal = *pThunkRef & 0xFFFF;
-					LOG_ERROR("[!] DLL Imports ordinal %d from %s. Imports are not supported...fatal", ordinal, szMod);
+					LOG_ERROR("[!] DLL Imports ordinal %d from %s. Imports are not supported...fatal\r\n", ordinal, szMod);
 					importsAtLeastOneBad = true;
 				} else {
 					auto pImport = (IMAGE_IMPORT_BY_NAME*)(pBase + (*pThunkRef));
@@ -128,7 +128,7 @@ bool ManualMapper::loadImage(char* pBase) {
 						RtlAnsiStringToUnicodeString(&name_unicode, &name_ansi, TRUE);
 						uint64_t pFn = (uint64_t)MmGetSystemRoutineAddress(&name_unicode);
 						if (!pFn) {
-							LOG_ERROR("[!] DLL Import %s from %s couldn't be found!...fatal", name, szMod);
+							LOG_ERROR("[!] DLL Import %s from %s couldn't be found!...fatal\r\n", name, szMod);
 							*pFuncRef = 0;
 							importsAtLeastOneBad = true;
 						} else {
@@ -136,7 +136,7 @@ bool ManualMapper::loadImage(char* pBase) {
 						}
 						RtlFreeUnicodeString(&name_unicode);
 					} else {
-						LOG_ERROR("[!] DLL Imports %s from %s. Imports are not supported...fatal", name, szMod);
+						LOG_ERROR("[!] DLL Imports %s from %s. Imports are not supported...fatal\r\n", name, szMod);
 						importsAtLeastOneBad = true;
 					}
 				}
@@ -151,7 +151,7 @@ bool ManualMapper::loadImage(char* pBase) {
 
 	// Execute TLS
 	if (pOptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size) {
-		LOG_INFO("[+] Executing TLS entires");
+		LOG_INFO("[+] Executing TLS entires\r\n");
 		auto pTLS = (IMAGE_TLS_DIRECTORY64*)(pBase + pOptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
 		auto pCallback = (PIMAGE_TLS_CALLBACK*)(pTLS->AddressOfCallBacks);
 		for (; pCallback && *pCallback; ++pCallback) {
@@ -161,13 +161,13 @@ bool ManualMapper::loadImage(char* pBase) {
 
 	// Execute main
 	if (_DllMain) {
-		LOG_INFO("[+] Executing DLLMain");
+		LOG_INFO("[+] Executing DLLMain\r\n");
 		_DllMain(pBase, DLL_PROCESS_ATTACH, nullptr);
 	}
 	else {
-		LOG_INFO("[+] No DLLMain");
+		LOG_INFO("[+] No DLLMain\r\n");
 	}
-	LOG_INFO("[+] DLL Load Done");
+	LOG_INFO("[+] DLL Load Done\r\n");
 	return true;
 }
 
@@ -178,13 +178,13 @@ bool ManualMapper::validateImage(char* pBase) {
 	//Optional data
 	auto dosHeader = (IMAGE_DOS_HEADER*)pBase;
 	if (dosHeader->e_magic != 0x5A4D) {
-		LOG_ERROR("DOS Magic Incorrect");
+		LOG_ERROR("DOS Magic Incorrect\r\n");
 		return false;
 	}
 
 	auto ntHeader = (IMAGE_NT_HEADERS64*)(pBase + dosHeader->e_lfanew);
 	if (ntHeader->Signature != 0x4550) {
-		LOG_ERROR("NT Magic Incorrect");
+		LOG_ERROR("NT Magic Incorrect\r\n");
 		return false;
 	}
 
@@ -218,24 +218,24 @@ uint64_t ManualMapper::mapImage(char* imageData, uint64_t imageSize) {
 
 	// Ensure up to IMAGE_SECTION_HEADER (start of first section data)
 	if (imageSize < pOldOptionalHeader->SizeOfHeaders) {
-		LOG_ERROR("[!] DLL appears truncated");
+		LOG_ERROR("[!] DLL appears truncated\r\n");
 		return NULL;
 	}
 
 	// If the machine type is not the current file type we fail
 	if (pOldFileHeader->Machine != IMAGE_FILE_MACHINE_AMD64) {
-		LOG_ERROR("[!] Only 64Bit DLLs are supported");
+		LOG_ERROR("[!] Only 64Bit DLLs are supported\r\n");
 		return NULL;
 	}
 
 	pTargetBase = (uint8_t*)ExAllocatePoolWithTag(NonPagedPoolExecute, pOldOptionalHeader->SizeOfImage, DRIVER_POOL_TAG);
 	if (!pTargetBase) {
-		LOG_ERROR("[!] Failed to allocate final mapped image memory at any address");
+		LOG_ERROR("[!] Failed to allocate final mapped image memory at any address\r\n");
 		return NULL;
 	}
 
 	if (pOldFileHeader->NumberOfSections <= 0) {
-		LOG_ERROR("[!] DLL has no sections, fatal");
+		LOG_ERROR("[!] DLL has no sections, fatal\r\n");
 		return NULL;
 	}
 
@@ -252,7 +252,7 @@ uint64_t ManualMapper::mapImage(char* imageData, uint64_t imageSize) {
 		// Each section is a buffer of raw data
 		rollingImageSize += pSectionHeader->SizeOfRawData;
 		if (imageSize < rollingImageSize) {
-			LOG_ERROR("[!] DLL appears truncated");
+			LOG_ERROR("[!] DLL appears truncated\r\n");
 			return NULL;
 		}
 
@@ -260,7 +260,7 @@ uint64_t ManualMapper::mapImage(char* imageData, uint64_t imageSize) {
 	}
 
 	if (!loadImage((char*)pTargetBase)) {
-		LOG_ERROR("[!] DLL Load Failed");
+		LOG_ERROR("[!] DLL Load Failed\r\n");
 		return NULL;
 	}
 
