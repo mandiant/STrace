@@ -96,7 +96,7 @@ T FnCast(void* fnToCast, T pFnCastTo) {
 // analog of dtrace_copyin. Given a pointer to a usermode structure, safely read that structure in.
 // Dtrace returns a pointer to that result. We can be slightly nicer and give a copy of the value exactly.
 template<typename T, typename T2 = uint64_t>
-std::remove_pointer_t<T> readUserArgPtr(T2 pUserAddress, PluginApis pApis) {
+std::remove_pointer_t<T> readUserArgPtr(T2 pUserAddress, PluginApis& pApis) {
     std::remove_pointer_t<T> tmp = { 0 };
 
     // if this read fails we just return the type's default value. This is fine.

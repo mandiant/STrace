@@ -88,7 +88,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                     auto pFilePath = getFilePathFromHandle(hFile);
 
                     if(pFilePath) {
-                        LOG_INFO("File %wZ deleted\r\n", pFilePath);
+                        LOG_INFO("File %wZ deleted\r\n", pFilePath->Name);
                         backupFile((wchar_t*)backup_directory, pFilePath->Name, hFile);
                         ExFreePoolWithTag(pFilePath, POOL_TAG);
                         pFilePath = nullptr;

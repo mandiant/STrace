@@ -146,7 +146,7 @@ bool backupFile(PWSTR backupDir, UNICODE_STRING backupFileName, HANDLE hFileSour
     // scan backwards until first slash
     PWCHAR fileName = backupFileName.Buffer + (backupFileName.Length - sizeof(wchar_t));
     size_t fileNameLen = 0;
-    while (*fileName != '\\') {
+    while (*fileName != L'\\') {
         fileName--;
         fileNameLen++;
     }
@@ -166,7 +166,7 @@ bool backupFile(PWSTR backupDir, UNICODE_STRING backupFileName, HANDLE hFileSour
         if (hFileCopy != INVALID_HANDLE_VALUE) {
             ZwClose(hFileCopy);
         }
-        });
+    });
 
     if (!createFile(&backupPath, &hFileCopy))
         return false;
@@ -266,7 +266,6 @@ OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
         pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, POOL_TAG);
         if (pObjectName) {
             status = ZwQueryObject(hFile, ObjectNameInformation, pObjectName, dwSize, &dwSize);
-            pObjectName->Name.Buffer = pObjectName->NameBuffer;
         }
     }
 

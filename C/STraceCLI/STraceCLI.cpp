@@ -96,7 +96,7 @@ void UnloadDll() {
 
 int main()
 {
-    printf("[+] Opeing driver\n");
+    printf("[+] Opening driver\n");
     g_Driver = CreateFileW(L"\\\\.\\STrace", GENERIC_ALL, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM, 0);
     if (g_Driver == INVALID_HANDLE_VALUE) {
         printf("[!] Handle open to driver failed\n");

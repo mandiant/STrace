@@ -302,6 +302,8 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
             goto exit;
         }
 
+        LOG_INFO("[+] Dll Mapped at %I64X\r\n", dllBase);
+
         auto entry = (tStpCallbackEntryPlugin)g_DllMapper.getExport(dllBase, "StpCallbackEntry");
         auto ret = (tStpCallbackReturnPlugin)g_DllMapper.getExport(dllBase, "StpCallbackReturn");
         auto init = (tStpInitialize)g_DllMapper.getExport(dllBase, "StpInitialize");

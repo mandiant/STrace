@@ -228,7 +228,6 @@ typedef enum _OBJECT_INFORMATION_CLASS {
 
 typedef struct _OBJECT_NAME_INFORMATION {
     UNICODE_STRING          Name;
-    WCHAR* NameBuffer;
 } OBJECT_NAME_INFORMATION, * POBJECT_NAME_INFORMATION;
 
 extern "C" __declspec(dllimport) PVOID NTAPI ExAllocatePoolWithTag(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag);
