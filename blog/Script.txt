@@ -8,7 +8,7 @@ A little about me, I work on Mandiant's FLARE team. I do alot of malware RE, as 
 
 # 3 - Outline
 
-This talk today is structured in 3 parts. First I'll familiarize you with what dtrace is exactly and why it's interesting. Then we'll start to migrate into some of the paint points their implementation has. Next I'll describe how their system is architected from a high level and how it interfaces with the windows kernel. Knowing a bit about the interns I'll then describe how we can insert ourselves into the boot process DTrace follows, document the kernel interfaces it uses, and cover some neat tricks like how they access potentially paged out memory.
+This talk today is structured in 3 parts. First I'll familiarize you with what dtrace is exactly and why it's interesting. Then we'll start to migrate into some of the paint points their implementation has. Next I'll describe how their system is architected from a high level and how it interfaces with the windows kernel. Knowing a bit about the internals I'll then describe how we can insert ourselves into the boot process DTrace follows, document the kernel interfaces it uses, and cover some neat tricks like how they access potentially paged out memory.
 
 Finally, once we have a thorough understanding of dtrace and what it provides, I'll introduce STrace and compare the two designs. I'll detour into the painful implementation process I followed, where I first wrote the system in Rust and WASM, then re-wrote the entire thing in C++ with a new design in mind. And to end it all I'll cover how STrace generates its own symbolicated stack traces without using any Microsoft symbol APIs.
 
@@ -20,8 +20,105 @@ To the right is an example dtrace script to set a syscall probe on NtCreateFile.
 
 # 5 - Advanced DTrace Examples
 
-Although powerful, the dtrace system has some sharp edges that make using it difficult and a bit painful. One of these it how memory must be accessed. DTrace may touch arguments from usermode before the syscall does, so memory can be paged out and innaccessible. This memory can't just be paged in as DTrace executes at a very high IRQL. To workaround this, scripts sometimes have to record points to arguments, then access them after the syscall is executed and pages the arguments in. Notice the usage of self here, we'll come back to that.
+Although powerful, the dtrace system has some sharp edges that make using it difficult and a bit painful. One of these it how memory must be accessed. DTrace may touch arguments from usermode before the syscall does, so memory can be paged out and innaccessible. This memory can't just be paged in as DTrace executes at a very high IRQL. To workaround this, scripts sometimes have to record pointers to arguments, then access them after the syscall is executed and pages the arguments in. Notice the usage of self here, we'll come back to that later.
 
 It's also difficult to print all arguments nicely. The D Language is fairly simple and simple things like printing an enumeration nicely can become very very verbose. String operations especially can be painful. Wide strings are not well supported, and conversion and string manipulation routines are for the most part not provided by the language. Creating helpers to workaround these limitations isn't easy either as the language doesn't support user defined functions, loops, or have a pre-processor. Defines and the neat trick above to pass scripts through a C pre-processor can be used to somwhat help but overall writing in the D language is a painful and verbose experience.
 
 # 6 - DTrace shortcomings
+
+In total DTrace is tedious to use due to both language and architectural shortcomings. The lack of functions and loops in particular make it difficult to express any sort of complex logic. The lack of side effects within probes is a significant draw back as well, it's nearly impossible to craft hooks that do things like suspend a process when this series of syscalls execute. In the microsoft port some typical dtrace features like the pre-processor are simply not implemented, and this ties into the wider issue of the development tooling and experience simply not being considered.
+
+# 7 - DTrace on Windows Internals
+
+I thought we could do better, and started reversing the internals to create my own implementation! I'll now cover the high level architecture of DTrace, it's boot process, neat ways it interfaces with the kernel, and finally document the tracing interfaces.
+
+# 8 - Architecure
+
+DTrace consists of 3 core parts, a usermode executable, a driver, and the kernel itself. In older implemenations of dtrace the driver communicated with a kernel extension known as traceext.sys, and then that extension handles registering to the kernel. In modern dtrace this kernel extension was removed and dtrace.sys now performs the same actions it did - becoming a kernel extension itself. After registering with the kernel the dtrace.sys driver is responsible for executing scripts provided by the usermode executable, and executes these within a VM in the kernel when probe events fire. Log events are generated, queued, and then read back by the usermode component. 
+
+# 9 - DTrace Boot
+
+To understand the registration of dtrace with the kernel, we have to start at the bootloader. Winload.exe first checks if the dtrace boot flag is set, and if so will add a schema set entry to the schema set map. Winload then transfers execution to ntoskrnl which has an import for TraceInitSystem from this api set entry. The kernel will resolve this api set entry to dtrace.sys via the schema set map, then load it as any other kernel import. Interestingly, TraceInitSystem is invoked before patchguard initialization, since dtrace must fill out some kernel callback tables which are patchguard protected.
+
+# 10 - ApiSet Dlls
+
+If you're not familiar with api set dlls and schema set maps, don't fear. They're essentialy just pseudo dlls that contain a map pointing to the real implementation dll that should be loaded. This map is contained within a section called .apiset, and you can parse it with some 010 editor templates online. The windows kernel uses api set dlls extensively. A kernel extension is just an api set dll that's dynamically added to the schema set map via this ApiSetSchemaExtension registery entry. The Names fields of the kernel extension registry entry can be set to anything, the FileName is the only important part as it defines what api set dll to load.
+
+# 11 - Signing Requirements
+
+Because kernel extensions are loaded as imports of the kernel, they're considered 'part of' the kernel. Thus, kernel extensions must be signed with a MS code signing cert. The api set DLL itself must also be MS signed. Because of this, we obviously have some issues if we want to replace this driver and provide our own implemenation. We're able to re-use the api set dll provided by microsoft in their dtrace distribution, as it's already signed and just refers to the implementing driver by name. As long as we name our implementation dtrace.sys as well, this will work. However, the kernel will verify our driver is MS signed during loading of the ntoskernel imports. Since this load is so early, we unfortunately have to disable driver signature enforcement via a boot entry. Signing the driver ourselves, enabled test signing, or using more advanced features like custom kernel signers will not work unfortunately. 
+
+Now at this point Microsoft if you're listening - I'd like to ask a favor, it would be fantastic if the signing requirements of this kernel extension mechanisms could be reconsidered so that valid signed drivers by non-ms parties could be loaded. For example if custom kernel signers is enabled, the UEFI platform key can be set by system owners and windows will trust and load any drivers self-signed by this root key - however the kernel will still reject self-signed drivers for things like kernel imports. A mechanism to allow dtrace to be loaded by self-signing against the UEFI platform key would be wonderful. The custom kernel signers mechanism itself could be documented and made easier to use as well, in the world of secure boot giving system ownership back to machine owners is important. 
+
+# 12 - DTrace Kernel Registration
+
+When the kernel invokes TraceInitSystem, dtrace.sys begins registering with the kernel. To do this the kernel passes a pointer to a structure called KiDynamicTraceCallouts, and dtrace.sys fills this with pointers to callbacks. DTrace also provides a pointer to a function called TraceAccessMemory to the kernel, and the kernel records the start and end addresses of this function by looking up the x64 unwind information for it. The kernel finally passes the structure KiDynamicTraceContext to dtrace.sys which provides a list of kernel structure offsets and some APIs used for tracing.
+
+# 13 - Syscall Probes
+
+Now for the fun stuff, once we're registered and loaded we can set various tracing probes! Syscall probes are supported by tracing code within KiSystemCall64. System routines that go through the SSDT are checked against a map, and if there's a map entry for an enter or exit probe for that system routine it's invoked inline before and after the routine. A snapshot of the arguments and stack are passed to the callbacks to read arguments. Because these are invoked inline, the system routine can be blocked from executing until the callbacks return which is very useful to perform side effects in entry probes. The callbacks themselves must be either of the two routines StpCallbackEntry or StpCallbackExit as found in the table KiDynamicTraceCallouts dtrace registered earlier. To figure out which syscall is being traced a probe id is passed to these callbacks. This ID is a magic value provided during callback registration and can be any unique number.
+
+# 14 - DTrace Tricks
+
+If you remember earlier when we covered dtrace registration, the kernel recorded the start and end address of TraceAccessMemory. This was done so that dtrace could safely access arbitrary paged out or innaccessible memory from a high IRQL. For some unknown reason, dtrace executes at IRQL 15, at this level paging in memory is not possible. Instead, user scripts can call a function copyin, which will invoke TraceAccessMemory. If an access fault occurs, the kernel will call MmAccessFault and just before blue screening will check if the caller was dtrace's special TraceAccessMemory by testing the caller address again the recorded start and end range values. If the caller was dtrace, then a status code is returned instead of a blue screen! If you've ever tried to do system call hooks yourself, you'll know how nice it is to have kernel support for this.
+
+# 15 - DTrace Tricks
+
+DTrace also adds kernel support for TLS. The self keyword in dtrace scripts is a keyword to allow users to store TLS variables. Microsoft implemented this by extending the KTHREAD structure with a small array called TracingPrivate. In modern windows this array is of size one so can hold a single thread local pointer to arbitrary data. Even nicer, the KiDynamicTraceContext structure embedded into the kernel holds the offset to this TracingPrivate field from the KTHREAD base.
+
+# 16 - DTrace Tricks
+
+I mentioned that dtrace doesn't support many side effects, but it has on very nice one - the ability to perform live kernel dumps. In a dtrace script users can call a function lkd to dump the kernel memory and user processes without a debugger attached or taking down the system. This is implemented by a call to DbgWerCaptureLiveKernelDump. The dtrace documentation ends up documenting the registry values and additional information about this API. This is a wrapper around the debug control API NtSystemDebugControl.
+
+# 17 - DTrace Tricks
+
+Finally, one of the coolest features dtrace provides is the ability to capture a stack walk, from kernel mode, that walks through the kernel down to user processes. Most tools don't initiate their walk from a driver, they usually call usermode APIs that do the stack walk, which is not feasible for the dtrace architecture. Instead, dtrace reimplements stackwalk64 in the kernel. At a high level it first locates the unwind information of the current module, and then virtually executes the unwind codes for that module. Once this is done the return address for the current frame can be read off the top of the stack and the process repeated. This is a fairly complex process, we'll cover how we can use DTrace's custom implemenation as inspiration to do the same ourselves.
+
+# 18 -  STrace a re-implemenation
+
+Ok we're almost there. Now that we know how dtrace works, and some neat tricks it uses to do some harder tasks, we have enough information to write our own version! In this section I'll cover how STrace differs from Microsoft's implementation, the tedium of writing drivers in Rust, how I added a WASM interpreter to the kernel, why I ditched rust for C++, how to load DLLs in the kernel, and finally how we can do our own stack walks like DTrace does.
+
+# 19 - STrace vs. DTrace
+
+Unlike DTrace, STrace doesn't execute at a high IRQL. It doesn't touch IRQL at all, it's up to the user to manage their IRQL level. This makes accessing memory a bit simpler and enables a wide set of kernel APIs to be acalled. The IRQL is LOW_LEVEL after switching from usermode to kernel mode based on my testing, though there's probably exceptions to that. Rather than scripts in the D language, STrace supports plugin DLLs written in modern C++ as long as they have no dependencies. This has the nice benefit that DLLs are compiled code, which is much faster than interpreting a scripting language. Symbolication of the log output is also done a bit differently. For STrace I impelemented a seperate tool that will handle download PDBs and parsing them, and it will run over the log output of strace and symbolicate it after the fact. Unlike DTrace, STrace only supports syscall probes. This is mostly because the signing requirements of the driver require DSE to be off, which means secure boot is off, which means the windows hypervisor is off which probe types like FBT rely on. It's not reasonable to bother reversing this with the current signing situation. ETW probes could be implemented however, and I'm open to PRs for that. Finally, Zw* apis can be traced as well, DTrace happens to filer these out.
+
+# 20 - System Architecure
+
+When considering how to design STrace, I had to come up with a list of requirements for what I wanted. First, the core features of dtrace had to be preserved. This included ensuring that users could still load scripts/plugins without having to reboot the system constantly and reload the driver. The scripts/plugins had to be in a language that was familiar to most people, and it had to be fast. 
+
+I also wanted to ensure that users didn't necessarily need kernel developement experience, but I wanted to enable more advanced users to call kernel APIs and perform side effects. And critically, the system needed to support full callstack traces back to the usermode for informative tracing.
+
+Considering all of these requirements ended up being a bit of a challenge. In the end I wrote the entire system twice, once with a driver in Rust and user scripts in WASM. Then a second time with a driver in C++ and user scripts as c++ DLLs. Finally I extended the C++ system by building a rust tool to handle symbolication of the log output. I'm going to walk through this journey now and compare and contrast the two developement experiences.
+
+# 21 - WASM in the NT Kernel
+
+I thought it might be neat if STrace mirrored the VM style scripting architecture that dtrace uses. It's a great user experience to be able to upload scripts from usermode without restarting the system. The big hurdle was picking what language would this VM use. I eventually settled on web assembly for a few reasons. The biggest reason is that it allows you to program in nearly any high level language and compile down to WASM bytecode. Users can write scripts in whatever language is comfortable to them. It's also isolated by design, sandboxing the script is kind of automatically a by product of the language design. Finding a compatible interpreter is a bit harder however, there's a few great runtimes but they all have complex dependencies unsuitable for the kernel or embedded environments. The only real contender I found was WASMI - created by the Parity Ethereum group. Finally, a valuable byproduct of crypto. This runtime was in Rust, which dictated that the driver for this design also needed to be in Rust. In the end this design ended up being a bit too slow, but I'll still go through the story of writing a driver in Rust.
+
+# 22 - Rust in the NT Kernel
+
+The hardest part of Rust for windows driver development is the lack of Rust language bindings. The DDK is designed only for C and Visual Studio. To setup a rust project correctly a complex cargo config and build script is needed. Furstratingly, the Rust compiler even in no_std has a hard time generating completely free standing binaries. When I tried to do this unwind tables would not always be generated even though I'd specified the flags to do so, C++ unwind handlers would be linked in despite my best attempts at specifying not to, and I got more than 1 internal compiler error. There's language limitations as well, Rust doesn't support anonymous unions or structures which Windows headers use extensively. And it ends up being that large chunks of driver code have to be wrapped in unsafe blocks due to the lack of ergonomic language projections. Typing projects manually for each and every API is horribly tedious.
+
+# 23 - C++ > Rust
+
+Overall, I decided that while Rust and WASM was really cool - and did work - that the experience was too painful. I ended up switching to C++ so that I could use the officially supported toolchain and DDK language projections. Doing this however, meant I could no longer use the Rust WASMI library to execute WASM code. I tried manually porting a C WASM interpreter to the kernel but it was too hard and I wasted too much time, so I had to come up with an alternative plugin architecture. I experimented with just mapping shellcode blobs, but that was a bad user experience, I tried using a shellcode compiler to improve that but the toolchain for that was too hacky, so what to do...
+
+# 24 - C++ DLLs in the Kernel
+
+Talking with some friends, I realized DLLs are the perfect solution. The only down side is that they're not at all supported by the kernel so I'd need a kernel compatible DLL mapper. If the DLLs being mapped are truly zero dependency, meaning no CRT, exceptions, or stack check security features - then this is possible. We can re-use the DLLs IAT and EAT, we'd just link to the kernel APIs instead of the usermode ones and plugin authors could export their callback functions. And this works great! There's one big trick though, it turns out the compiler likes to replace naive routines like memcpy with intrinsics, but since we don't link any dependencies these intrinsics have no implementing body and linking fails. To get around this in Visual Studio we can instead define our own intrinsics.
+
+# 25 - Dlls Importing Kernel APIs
+
+Linking kernel APIs rather than usermode APIs is slightly convoluted due to how MSVC works. The DDK injects the kernel lib files into the linker path if the project type is a driver, but not if it's a normal DLL. The only way to fix this is to manually specify the path to ntoskrnl.lib in the DLL project linker settings. After this, users can then import kernel APIs like any other API.
+
+# 26 - An STrace Plugin
+
+So here's what this looks like in the end. Users write little zero dependency kernel DLLs. The DLLs export some callbacks like StpCallbackEntry and Exit that get invoked when a syscall occurs. The probeId can be switched on depending on what syscall is occuring and arbitrary code can be written to handle the event to log it or do side effects. In this example the file being deleted is copied to a temporary folder before the syscall executes, the event is logged, a stack trace is printed, and then the original syscall will execute once this entry handler returns.
+
+# 27 - DIY Callstack Symbolication
+
+Now how about those callstacks? Knowing how DTrace works, we can peice together different APIs to do the same. The kernel API RtlWalkFrameChain with the flag RTL_WALK_USER_MODE_STACK will execute the UNWIND opcodes for modules the same way that dtrace does. This however just gives us a list of return addresses. On top of this we then need to walk all kernel modules and usermode modules, and convert these return addresses to module names + offset pairs. 
+
+Those module and offset pairs are what's logged to file. To symbolicate the log I've created a tool called PDBReSym. This tool completely implements fetching, downloading, and caching of PDBs from the microsoft symbol server. The entire C windows directory can be cached in about 2 minutes with a fast internet connection. To resolve offsets to symbols the tool builds a range map cache which allows very fast nearest symbol lookups. After resolving nearest symbols the log file output of STrace can be re-written with the symbolicated version.
+
+
+
