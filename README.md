@@ -1,6 +1,8 @@
 # STrace
 Steve's Tracer. A DTrace on windows syscall hook reimplementation. Think of this like a patchguard compatible SSDT hook, but without hacks. This doesn't support SSSDT (win32k apis), as the DTrace system call APIs themselves do not support this additional table. Zw* kernel apis can be traced in addition to all usermode SSDT syscalls.
 
+Please read to the end of this readme if you're developing new plugins for STrace!
+
 # Functionality
 
 Dtrace on windows supports multiple probe types. These include syscall, fbt, etw, profile, and maybe more. This reimplementation **only re-implements the syscall probe types**. All other probe types are considered completely out of scope for this project, and will **never be supported**. Please feel free to fork the project if you wish to add additional probe types. The scope was limited to just syscall probes due to the complexity of the other probe types and the systems they touch.
@@ -43,3 +45,7 @@ This project does the same operations as the installer, but via a simple powersh
 STrace is loaded very early during kernel initialization, enabling Test Signing in the boot configuration database (BCD) is _not_ sufficient. Driver signature enforcement (DSE) must be disabled for STrace to successfully load, and this must be done every boot manually. To facilitate this the install script creates an easy boot menu entry for the user to select. There is no BCD flag to allow DSE to be permanently disabled across reboots, the kernel specifically forbids this.
 
 Forgetting to disable DSE on boot will win you a trip to the  Automatic Repair menu upon restarting. You can try again without harm, if boot continues to fail the STrace driver will need to be manually removed from the drivers folder. Be aware that **boot failures can cause the STrace service's autorun flag to be disabled by windows***, you may need to set this back to autorun if a boot failure occurs at any time.
+
+# Plugins
+
+To develop your own plugins it's best to use one of the existing plugins as a base project. The visual studio projects are set with many very specific settings to generate free standing binaries with no dependencies. The non-default settings are too many to list, so simply copy one of the projects, and modify the code to add your own logic instead. **If you create a useful plugin, please submit a PR**! The more plugins that are made the more useful this system is to everyone!
