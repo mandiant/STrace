@@ -4,14 +4,12 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: windows-2019
+    runs-on: windows-2022
     steps:
     - name: Checkout
       uses: actions/checkout@v2
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v1.1
-      with:
-        vs-prerelease: true
     - name: Setup rust toolchain
       uses: actions-rs/toolchain@v1.0.6
       with:
