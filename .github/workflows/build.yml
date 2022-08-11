@@ -1,0 +1,70 @@
+name: Build All
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+    - name: Setup rust toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: nightly
+        components: rustfmt, clippy
+        default: true
+        override: true
+    - name: Add wasm cargo target
+      run: rustup target add wasm32-unknown-unknown
+    - name: Build C Driver
+      run: |
+        msbuild.exe C/STrace.sln /m /verbosity:minimal /t:Rebuild /p:Configuration=Debug /p:Platform=x64
+        msbuild.exe C/STrace.sln /m /verbosity:minimal /t:Rebuild /p:Configuration=Release /p:Platform=x64
+    - name: Build Wasm
+      run: |
+       cd Rust/WasmScript
+       cargo build
+       cargo build --release
+       cd ../../
+       
+       cd Rust/WasmTester
+       cargo build 
+       cargo build --release
+    - name: Build Rust Driver
+      run: |
+       cd Rust/Driver
+       cargo build
+       cargo build --release
+    - name: Zip Build
+      run: |
+        cd Rust/Driver
+        Get-ChildItem -exclude target | Remove-Item -Force -Recurse -Confirm:$false
+        cd target
+        Get-ChildItem -exclude x86_64-pc-windows-msvc | Remove-Item -Force -Recurse -Confirm:$false
+        cd ../../../
+        
+        cd Rust/WasmTester
+        Get-ChildItem -exclude target | Remove-Item -Force -Recurse -Confirm:$false
+        cd target
+        Get-ChildItem -exclude release, debug | Remove-Item -Force -Recurse -Confirm:$false
+        cd ../../../
+        
+        cd Rust/WasmScript
+        Get-ChildItem -exclude target | Remove-Item -Force -Recurse -Confirm:$false
+        cd target
+        Get-ChildItem -exclude wasm32-unknown-unknown | Remove-Item -Force -Recurse -Confirm:$false
+        cd ../../../
+        
+        cd C/
+        Get-ChildItem -exclude x64 | Remove-Item -Force -Recurse -Confirm:$false
+        cd ../
+        
+        Compress-Archive -DestinationPath STrace.zip -Path Rust, C, install -CompressionLevel Fastest
+    - name: Release
+      uses: softprops/action-gh-release@v0.1.12
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: STrace.zip
