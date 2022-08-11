@@ -130,6 +130,50 @@ async fn fetch_pdb(binary_path: &Path, cache_dir: &Path, mpb: Arc<MultiProgress>
     Ok((body.freeze(), pdb_paths))
 }
 
+async fn fetch_pe(filename: &str, timedatestamp: u64, sizeofimage: u64, mpb: Arc<MultiProgress>) -> Result<PathBuf> {
+   
+    let url = format!(
+        "http://msdl.microsoft.com/download/symbols/{}/{:x}{:x}/{}",
+        filename, timedatestamp, sizeofimage, filename
+    );
+
+    println!("Downloading from {}", url);
+
+    let mut resp = reqwest::Client::builder()
+        .build()?
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await?;
+
+    let total_size = resp.content_length().expect("Failed to get download size");
+
+    let dl_progressbar = mpb.add(ProgressBar::new(total_size));
+    dl_progressbar.set_style(get_pb_dl_style());
+    dl_progressbar.set_message(format!("Downloading {}", filename));
+    dl_progressbar.set_draw_rate(3);
+    
+    let mut downloaded: u64 = 0;
+    
+    let cur_folder = env::current_dir().expect("failed to locate current directory");
+    let download_path = cur_folder.join(filename);
+    let mut file = tokio::fs::File::create(&download_path).await.expect("failed to create pdb file");
+
+    let mut body = BytesMut::with_capacity(total_size as usize);
+    while let Some(chunk) = resp.chunk().await? {
+        body.extend(&chunk);
+        file.write_all(&chunk).await.expect("Failed to write chunk to pdb file");
+
+        let new = std::cmp::min(downloaded + (chunk.len() as u64), total_size);
+        downloaded = new;
+        dl_progressbar.set_position(new);
+    }
+
+    dl_progressbar.finish_and_clear();
+
+    Ok(download_path)
+}
+
 fn visit_dir(
     path: impl Into<PathBuf>,
 ) -> impl Stream<Item = io::Result<DirEntry>> + Send + 'static {
@@ -342,10 +386,10 @@ async fn main() {
     let matches = clap::App::new("flareup server")
     .author("Stephen Eckels")
     .arg(
-        clap::Arg::new("logfile").help("Path to strace log file").required(true)
+        clap::Arg::new("logfile").help("Path to strace log file").required(false)
     )
     .arg(
-        clap::Arg::new("outfile").help("Path to write symbolicated output file").required(true)
+        clap::Arg::new("outfile").help("Path to write symbolicated output file").required(false)
     )
     .arg(
         clap::Arg::new("cachefolder").help("Path to directory to cache PDBs").long("cachefolder").required(false).default_value("C:\\symbols")
@@ -353,13 +397,52 @@ async fn main() {
     .arg(
         clap::Arg::new("sysdir").help("Path to folder containing windows system binaries").long("sysdir").required(false).default_value("C:\\Windows\\System32\\")
     )
-    .arg(
-        clap::Arg::new("cachesyms").help("If provided, iterates the windows system32 directory and caches all PDBs concurrently before symbolication").short('c').long("cachesyms").required(false)
-    ).get_matches();
+    .subcommand(
+        clap::Command::new("cachesyms")
+        .about("If provided, iterates the windows system32 directory and caches all PDBs concurrently before symbolication")
+    )
+    .subcommand(clap::Command::new("downloadpe")
+        .about("Rather than downloading a PDB, download a PE from the symbol server")
+        .arg(
+            clap::Arg::new("filename").help("PE name, ex: kernel32.dll").required(true)
+        )
+        .arg(
+            clap::Arg::new("timestamp").help("PE TimeDateStamp from the file header (in hex)").required(true)
+        )
+        .arg(
+            clap::Arg::new("filesize").help("PE SizeOfImage from the optional header (in hex)").required(true)
+        )
+    )
+    .get_matches();
+
+    let mpb = Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::stdout()));
+
+    let subcommand = matches.subcommand();
+    if let Some(("downloadpe", args)) = subcommand {
+        let filename = args.value_of("filename").unwrap();
+        let timestamp = u64::from_str_radix(args.value_of("timestamp").unwrap(), 16).expect("timestamp is not hex");
+        let filesize = u64::from_str_radix(args.value_of("filesize").unwrap(), 16).expect("filesize is not hex");
+
+        let downloaded_file = match fetch_pe(filename, timestamp, filesize, mpb.clone()).await {
+            Ok(p) => p,
+            Err(e) => {
+                println!("Error downloading {}: {}", filename, e.to_string());
+                return;
+            }
+        };
+        println!("Downloaded {} to {}", filename, downloaded_file.as_os_str().to_str().unwrap());
+        return
+    }
 
     let symbol_cache_dir = Path::new(matches.value_of("cachefolder").expect("Failed to read cachefolder argument for symbol cache"));
     let system_directory = Path::new(matches.value_of("sysdir").expect("Failed to read sysdir argument for symbol cache source binaries"));
     fs::create_dir_all(&symbol_cache_dir).expect("Failed to create symbol cache directory");
+
+    // before anything, download the symbols for everything in the windows directory.
+    // this is much faster, as this is able to concurrently download things. The loop below waits per file.
+    if let Some(("cachesyms", _args)) = subcommand {
+        let _ = build_symbol_cache(system_directory, symbol_cache_dir, mpb.clone()).await;
+    }
 
     // binary file path -> range: RVA_start..RVA_end = PDB Function Line Info
     let open_pdbs: HashMap<PathBuf, RangeMap<u32, LineSymbol>> = HashMap::new();
@@ -377,14 +460,6 @@ async fn main() {
             .value_of("outfile")
             .expect("outfile argument not provided"),
     );
-
-    let mpb = Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::stdout()));
-
-    // before anything, download the symbols for everything in the windows directory.
-    // this is much faster, as this is able to concurrently download things. The loop below waits per file.
-    if matches.contains_id("cachesyms") {
-        let _ = build_symbol_cache(system_directory, symbol_cache_dir, mpb.clone()).await;
-    }
 
     if let Some(loglines) = load_txt_file(Path::new(logfile)) {
         let log_progressbar = mpb.add(ProgressBar::new(loglines.len() as u64));
