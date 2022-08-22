@@ -48,4 +48,4 @@ Forgetting to disable DSE on boot will win you a trip to the  Automatic Repair m
 
 # Plugins
 
-To develop your own plugins it's best to use one of the existing plugins as a base project. The visual studio projects are set with many very specific settings to generate free standing binaries with no dependencies. The non-default settings are too many to list, so simply copy one of the projects, and modify the code to add your own logic instead. **If you create a useful plugin, please submit a PR**! The more plugins that are made the more useful this system is to everyone!
+To develop your own plugins it's best to use one of the existing plugins as a base project. The visual studio projects are set with many very specific settings to generate free standing binaries with no dependencies. The non-default settings are too many to list, so simply copy one of the projects, and modify the code to add your own logic instead (https://stackoverflow.com/questions/884255/visual-studio-copy-project). **If you create a useful plugin, please submit a PR** ! The more plugins that are made the more useful this system is to everyone!
