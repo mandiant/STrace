@@ -27,6 +27,29 @@ public:
 			return pRegArgs[idx];
 		}
 	}
+
+	template<typename T>
+	void write_argument(const uint32_t idx, T value) {
+		if (idx > paramCount || regArgsSize > paramCount)
+			return;
+
+		if (idx >= regArgsSize) {
+			// stack array trims off the register array data, and indexes from that offset value
+			pStackArgs[idx - regArgsSize] = (uint64_t)value;
+		}
+		else {
+			pRegArgs[idx] = (uint64_t)value;
+		}
+	}
+
+	uint64_t read_return_value() {
+		return pRegArgs[0];
+	}
+
+	template<typename T>
+	void write_return_value(T value) {
+		pRegArgs[0] = (uint64_t)value;
+	}
 };
 
 typedef LONG NTSTATUS;
