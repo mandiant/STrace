@@ -160,7 +160,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="crt.cpp" />
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="Interface.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="crt.h" />
+    <ClInclude Include="Interface.h" />
+    <ClInclude Include="KernelApis.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

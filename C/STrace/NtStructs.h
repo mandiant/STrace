@@ -99,6 +99,66 @@ typedef struct _PEB32
     ULONG ApiSetMap;
 } PEB32, * PPEB32;
 
+typedef struct _WNODE_HEADER {
+    ULONG BufferSize;
+    ULONG ProviderId;
+    union {
+        ULONG64 HistoricalContext;
+        struct {
+            ULONG Version;
+            ULONG Linkage;
+        };
+    };
+    union {
+        HANDLE        KernelHandle;
+        LARGE_INTEGER TimeStamp;
+    };
+    GUID  Guid;
+    ULONG ClientContext;
+    ULONG Flags;
+} WNODE_HEADER, * PWNODE_HEADER;
+
+typedef struct _EVENT_TRACE_PROPERTIES_V2 {
+    WNODE_HEADER             Wnode;
+    ULONG                    BufferSize;
+    ULONG                    MinimumBuffers;
+    ULONG                    MaximumBuffers;
+    ULONG                    MaximumFileSize;
+    ULONG                    LogFileMode;
+    ULONG                    FlushTimer;
+    ULONG                    EnableFlags;
+    union {
+        LONG AgeLimit;
+        LONG FlushThreshold;
+    } DUMMYUNIONNAME;
+    ULONG                    NumberOfBuffers;
+    ULONG                    FreeBuffers;
+    ULONG                    EventsLost;
+    ULONG                    BuffersWritten;
+    ULONG                    LogBuffersLost;
+    ULONG                    RealTimeBuffersLost;
+    HANDLE                   LoggerThreadId;
+    ULONG                    LogFileNameOffset;
+    ULONG                    LoggerNameOffset;
+    union {
+        struct {
+            ULONG VersionNumber : 8;
+        } DUMMYSTRUCTNAME;
+        ULONG V2Control;
+    } DUMMYUNIONNAME2;
+    ULONG                    FilterDescCount;
+    PEVENT_FILTER_DESCRIPTOR FilterDesc;
+    union {
+        struct {
+            ULONG Wow : 1;
+            ULONG QpcDeltaTracking : 1;
+            ULONG LargeMdlPages : 1;
+            ULONG ExcludeKernelStack : 1;
+        } DUMMYSTRUCTNAME;
+        ULONG64 V2Options;
+    } DUMMYUNIONNAME3;
+} EVENT_TRACE_PROPERTIES_V2, * PEVENT_TRACE_PROPERTIES_V2;
+
 typedef struct _EVENT_HEADER
 {
     USHORT Size;
@@ -119,6 +179,43 @@ typedef struct _EVENT_HEADER
     } DUMMYUNIONNAME;
     GUID             ActivityId;
 } EVENT_HEADER, * PEVENT_HEADER;
+
+#define EtwpStartTrace		1
+#define EtwpStopTrace		2
+#define EtwpQueryTrace		3
+#define EtwpUpdateTrace		4
+#define EtwpFlushTrace		5
+
+#define WNODE_FLAG_TRACED_GUID			0x00020000  // denotes a trace
+
+// ETW logger flags
+#define EVENT_TRACE_FILE_MODE_NONE          0x00000000  // Logfile is off
+#define EVENT_TRACE_FILE_MODE_SEQUENTIAL    0x00000001  // Log sequentially
+#define EVENT_TRACE_FILE_MODE_CIRCULAR      0x00000002  // Log in circular manner
+#define EVENT_TRACE_FILE_MODE_APPEND        0x00000004  // Append sequential log
+#define EVENT_TRACE_REAL_TIME_MODE          0x00000100  // Real time mode on
+#define EVENT_TRACE_DELAY_OPEN_FILE_MODE    0x00000200  // Delay opening file
+#define EVENT_TRACE_BUFFERING_MODE          0x00000400  // Buffering mode only
+#define EVENT_TRACE_PRIVATE_LOGGER_MODE     0x00000800  // Process Private Logger
+#define EVENT_TRACE_ADD_HEADER_MODE         0x00001000  // Add a logfile header
+#define EVENT_TRACE_USE_GLOBAL_SEQUENCE     0x00004000  // Use global sequence no.
+#define EVENT_TRACE_USE_LOCAL_SEQUENCE      0x00008000  // Use local sequence no.
+#define EVENT_TRACE_RELOG_MODE              0x00010000  // Relogger
+#define EVENT_TRACE_USE_PAGED_MEMORY        0x01000000  // Use pageable buffers
+#define EVENT_TRACE_FILE_MODE_NEWFILE       0x00000008  // Auto-switch log file
+#define EVENT_TRACE_FILE_MODE_PREALLOCATE   0x00000020  // Pre-allocate mode
+#define EVENT_TRACE_NONSTOPPABLE_MODE       0x00000040  // Session cannot be stopped (Autologger only)
+#define EVENT_TRACE_SECURE_MODE             0x00000080  // Secure session
+#define EVENT_TRACE_USE_KBYTES_FOR_SIZE     0x00002000  // Use KBytes as file size unit
+#define EVENT_TRACE_PRIVATE_IN_PROC         0x00020000  // In process private logger
+#define EVENT_TRACE_MODE_RESERVED           0x00100000  // Reserved bit, used to signal Heap/Critsec tracing
+#define EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING 0x10000000  // Use this for low frequency sessions.
+#define EVENT_TRACE_SYSTEM_LOGGER_MODE      0x02000000  // Receive events from SystemTraceProvider
+#define EVENT_TRACE_ADDTO_TRIAGE_DUMP       0x80000000  // Add ETW buffers to triage dumps
+#define EVENT_TRACE_STOP_ON_HYBRID_SHUTDOWN 0x00400000  // Stop on hybrid shutdown
+#define EVENT_TRACE_PERSIST_ON_HYBRID_SHUTDOWN 0x00800000 // Persist on hybrid shutdown
+#define EVENT_TRACE_INDEPENDENT_SESSION_MODE  0x08000000  // Independent logger session
+#define EVENT_TRACE_COMPRESSED_MODE         0x04000000 // Compressed logger session.
 
 // https://github.com/processhacker/processhacker/blob/e96989fd396b28f71c080edc7be9e7256b5229d0/KProcessHacker/thread.c
 #define MAX_STACK_DEPTH 256 // arbitrary
@@ -449,6 +546,15 @@ extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwQuerySystemInformation(
     _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
     _In_ ULONG SystemInformationLength,
     _Out_opt_ PULONG ReturnLength
+);
+
+extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwTraceControl(
+    ULONG FunctionCode,
+    PVOID InBuffer,
+    ULONG InBufferLen,
+    PVOID OutBuffer,
+    ULONG OutBufferLen,
+    ULONG * ReturnSize
 );
 
 template<typename T>

@@ -1,3 +1,5 @@
+//#include <evntcons.h>
+//#include <evntrace.h>
 #include <ntifs.h>
 #include <ntstatus.h>
 
@@ -72,6 +74,7 @@ private:
 // forward declare
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
+extern "C" __declspec(dllexport) void DtEtwpEventCallback(EVENT_HEADER* pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b);
 
 NTSTATUS SetCallbackApi(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
@@ -88,6 +91,58 @@ NTSTATUS UnSetCallbackApi(const char* syscallName, BOOLEAN isEntry) {
     }
 
     return TraceSystemApi->KeSetSystemServiceCallback(syscallName, isEntry, 0, 0);
+}
+
+NTSTATUS SetEtwCallback(GUID providerGuid)
+{
+    DbgBreakPoint();
+    if (!TraceSystemApi || !TraceSystemApi->EtwRegisterEventCallback) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    // See: prov_etw_init
+    SIZE_T eventPropertiesSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + 64;
+    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePool(NonPagedPool, eventPropertiesSize);
+    if (!eventProperties) {
+        return STATUS_UNSUCCESSFUL;
+    }
+    memset(eventProperties, 0, eventPropertiesSize);
+    eventProperties->Wnode.BufferSize = 0xB0;
+    eventProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    eventProperties->Wnode.Guid = providerGuid;
+    eventProperties->LogFileMode = EVENT_TRACE_INDEPENDENT_SESSION_MODE | EVENT_TRACE_BUFFERING_MODE;
+    eventProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2);
+    wcscpy_s((wchar_t*)(((PUCHAR)eventProperties) + sizeof(EVENT_TRACE_PROPERTIES_V2)), 64, L"DTraceLoggingSession");
+
+    ULONG returnSize = 0;
+    if (ZwTraceControl(EtwpStartTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize) != STATUS_SUCCESS) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    return TraceSystemApi->EtwRegisterEventCallback(0, (ULONG64)&DtEtwpEventCallback, 0);
+}
+
+NTSTATUS UnSetEtwCallback(GUID providerGuid)
+{
+    SIZE_T eventPropertiesSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + 64;
+    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePool(NonPagedPool, eventPropertiesSize);
+    if (!eventProperties) {
+        return STATUS_UNSUCCESSFUL;
+    }
+    memset(eventProperties, 0, eventPropertiesSize);
+    eventProperties->Wnode.BufferSize = 0xB0;
+    eventProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    eventProperties->Wnode.Guid = providerGuid;
+    eventProperties->LogFileMode = EVENT_TRACE_INDEPENDENT_SESSION_MODE | EVENT_TRACE_BUFFERING_MODE;
+    eventProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2);
+    wcscpy_s((wchar_t*)(((PUCHAR)eventProperties) + sizeof(EVENT_TRACE_PROPERTIES_V2)), 64, L"DTraceLoggingSession");
+
+    ULONG returnSize = 0;
+    if (ZwTraceControl(EtwpStopTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize) != STATUS_SUCCESS) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 bool LogInitialized = false;
@@ -341,7 +396,7 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
 
         if (pluginData.pInitialize) {
             // The plugin must immediately copy this structure. It must be a local to avoid C++ static initializers, which are created if its a global
-            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &TraceAccessMemory);
+            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory);
             pluginData.pInitialize(pluginApis);
 
             // prevent double initialize regardless of rest
