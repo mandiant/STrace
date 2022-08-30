@@ -15,6 +15,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FileDeleteRecordPlugin", "F
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LogSyscallsPlugin", "LogSyscallsPlugin\LogSyscallsPlugin.vcxproj", "{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EtwCallbackPlugin", "EtwCallbackPlugin\EtwCallbackPlugin.vcxproj", "{3AC65894-4A8A-487A-BC59-5917B91E2169}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Release|x64 = Release|x64
@@ -29,6 +31,8 @@ Global
 		{C09F1082-CDCA-4320-AB91-CC3EAB12560C}.Release|x64.Build.0 = Release|x64
 		{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}.Release|x64.ActiveCfg = Release|x64
 		{50C1055F-A9D3-43A3-9FDB-35FD9EBB5645}.Release|x64.Build.0 = Release|x64
+		{3AC65894-4A8A-487A-BC59-5917B91E2169}.Release|x64.ActiveCfg = Release|x64
+		{3AC65894-4A8A-487A-BC59-5917B91E2169}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

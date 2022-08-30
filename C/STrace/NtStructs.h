@@ -99,6 +99,27 @@ typedef struct _PEB32
     ULONG ApiSetMap;
 } PEB32, * PPEB32;
 
+typedef struct _EVENT_HEADER
+{
+    USHORT Size;
+    USHORT HeaderType;
+    USHORT Flags;
+    USHORT EventProperty;
+    ULONG ThreadId;
+    ULONG ProcessId;
+    LARGE_INTEGER TimeStamp;
+    GUID ProviderId;
+    EVENT_DESCRIPTOR EventDescriptor;
+    union {
+        struct {
+            ULONG KernelTime;
+            ULONG UserTime;
+        } DUMMYSTRUCTNAME;
+        ULONG64 ProcessorTime;
+    } DUMMYUNIONNAME;
+    GUID             ActivityId;
+} EVENT_HEADER, * PEVENT_HEADER;
+
 // https://github.com/processhacker/processhacker/blob/e96989fd396b28f71c080edc7be9e7256b5229d0/KProcessHacker/thread.c
 #define MAX_STACK_DEPTH 256 // arbitrary
 #define RTL_WALK_USER_MODE_STACK 0x00000001
