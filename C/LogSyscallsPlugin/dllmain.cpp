@@ -1902,7 +1902,7 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    if (strcmp(callerinfo.processName, "rundll32.exe") == 0) {
+    if (strcmp(callerinfo.processName, "a.exe") == 0) {
         return true;
     }
     return false;

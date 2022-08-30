@@ -22,8 +22,7 @@ public:
 		if (idx >= regArgsSize) {
 			// stack array trims off the register array data, and indexes from that offset value
 			return pStackArgs[idx - regArgsSize];
-		}
-		else {
+		} else {
 			return pRegArgs[idx];
 		}
 	}
@@ -36,8 +35,7 @@ public:
 		if (idx >= regArgsSize) {
 			// stack array trims off the register array data, and indexes from that offset value
 			pStackArgs[idx - regArgsSize] = (uint64_t)value;
-		}
-		else {
+		} else {
 			pRegArgs[idx] = (uint64_t)value;
 		}
 	}
