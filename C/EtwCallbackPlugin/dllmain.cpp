@@ -29,7 +29,8 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis & pApis) {
     providerGuid.Data4[6] = 0x6c;
     providerGuid.Data4[7] = 0x00;
 
-    g_Apis.pEtwSetCallback(providerGuid);
+    NTSTATUS ret = g_Apis.pEtwSetCallback(providerGuid);
+    LOG_INFO("Plugin Initialise returned 0x%08X\r\n", ret);
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -51,7 +52,8 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     providerGuid.Data4[6] = 0x6c;
     providerGuid.Data4[7] = 0x00;
 
-    g_Apis.pEtwUnSetCallback(providerGuid);
+    NTSTATUS ret = g_Apis.pEtwUnSetCallback(providerGuid);
+    LOG_INFO("Plugin DeInitialise returned 0x%08X\r\n", ret);
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -59,7 +61,7 @@ ASSERT_INTERFACE_IMPLEMENTED(StpDeInitialize, tStpDeInitialize, "StpDeInitialize
 
 extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER EventHeader, ULONG32 a, GUID* ProviderGuid, ULONG32 b)
 {
-    __debugbreak();
+    LOG_INFO("Received event ID %d\r\n", EventHeader->EventDescriptor.Id);
 }
 ASSERT_INTERFACE_IMPLEMENTED(DtEtwpEventCallback, tDtEtwpEventCallback, "DtEtwpEventCallback does not match the interface type");
 
