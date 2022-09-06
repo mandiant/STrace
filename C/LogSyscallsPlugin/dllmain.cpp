@@ -1871,6 +1871,39 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpDeInitialize, tStpDeInitialize, "StpDeInitialize does not match the interface type");
 
+#include <Windows.h>
+
+const static PCHAR GetConfigFilePath() {
+    CHAR buffer[MAX_PATH];
+    if (GetFullPathNameA("straceconfig.ini", MAX_PATH, buffer, NULL)) {
+        return buffer;
+    }
+
+    return nullptr;
+
+}
+
+const static PCHAR GetTarget(PCHAR buffer) {
+    auto filename = GetConfigFilePath();
+    if (filename) {
+        if (GetPrivateProfileStringA("TARGET", "exe", "", buffer, MAX_PATH, filename)) {
+            return buffer;
+        }
+    };
+
+    return nullptr;
+}
+
+const static PCHAR DoGetTarget() {
+    CHAR buffer[MAX_PATH];
+    if (GetConfigFilePath()) {
+        if (GetTarget(buffer)) {
+            return buffer;
+        }
+    }
+    return nullptr;
+}
+
 void PrintStackTrace(CallerInfo& callerinfo) {
     for (int i = 0; i < callerinfo.frameDepth; i++) {
         if ((callerinfo.frames)[i].frameaddress) {
@@ -1902,8 +1935,11 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    if (strcmp(callerinfo.processName, "a.exe") == 0) {
-        return true;
+    auto ConfigFile = DoGetTarget();
+    if (ConfigFile) {
+        if (strcmp(callerinfo.processName, ConfigFile) == 0) {
+                return true;
+            }
     }
     return false;
 }
