@@ -127,12 +127,15 @@
   <ItemGroup>
     <ClCompile Include="Driver.cpp" />
     <ClCompile Include="DynamicTrace.cpp" />
+    <ClCompile Include="Etw.cpp" />
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="ManualMap.cpp" />
+    <ClCompile Include="NtStructs.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Constants.h" />
     <ClInclude Include="DynamicTrace.h" />
+    <ClInclude Include="Etw.h" />
     <ClInclude Include="Interface.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="ManualMap.h" />

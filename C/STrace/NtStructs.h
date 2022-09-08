@@ -99,6 +99,7 @@ typedef struct _PEB32
     ULONG ApiSetMap;
 } PEB32, * PPEB32;
 
+#pragma warning( disable : 4201 )
 typedef struct _WNODE_HEADER {
     ULONG BufferSize;
     ULONG ProviderId;
@@ -179,6 +180,7 @@ typedef struct _EVENT_HEADER
     } DUMMYUNIONNAME;
     GUID             ActivityId;
 } EVENT_HEADER, * PEVENT_HEADER;
+#pragma warning( default : 4201 )
 
 #define EtwpStartTrace		1
 #define EtwpStopTrace		2
@@ -186,95 +188,17 @@ typedef struct _EVENT_HEADER
 #define EtwpUpdateTrace		4
 #define EtwpFlushTrace		5
 
-#define WNODE_FLAG_TRACED_GUID			0x00020000  // denotes a trace
+#define WNODE_FLAG_TRACED_GUID			      0x00020000  // denotes a trace
 
-// ETW logger flags
-#define EVENT_TRACE_FILE_MODE_NONE          0x00000000  // Logfile is off
-#define EVENT_TRACE_FILE_MODE_SEQUENTIAL    0x00000001  // Log sequentially
-#define EVENT_TRACE_FILE_MODE_CIRCULAR      0x00000002  // Log in circular manner
-#define EVENT_TRACE_FILE_MODE_APPEND        0x00000004  // Append sequential log
-#define EVENT_TRACE_REAL_TIME_MODE          0x00000100  // Real time mode on
-#define EVENT_TRACE_DELAY_OPEN_FILE_MODE    0x00000200  // Delay opening file
-#define EVENT_TRACE_BUFFERING_MODE          0x00000400  // Buffering mode only
-#define EVENT_TRACE_PRIVATE_LOGGER_MODE     0x00000800  // Process Private Logger
-#define EVENT_TRACE_ADD_HEADER_MODE         0x00001000  // Add a logfile header
-#define EVENT_TRACE_USE_GLOBAL_SEQUENCE     0x00004000  // Use global sequence no.
-#define EVENT_TRACE_USE_LOCAL_SEQUENCE      0x00008000  // Use local sequence no.
-#define EVENT_TRACE_RELOG_MODE              0x00010000  // Relogger
-#define EVENT_TRACE_USE_PAGED_MEMORY        0x01000000  // Use pageable buffers
-#define EVENT_TRACE_FILE_MODE_NEWFILE       0x00000008  // Auto-switch log file
-#define EVENT_TRACE_FILE_MODE_PREALLOCATE   0x00000020  // Pre-allocate mode
-#define EVENT_TRACE_NONSTOPPABLE_MODE       0x00000040  // Session cannot be stopped (Autologger only)
-#define EVENT_TRACE_SECURE_MODE             0x00000080  // Secure session
-#define EVENT_TRACE_USE_KBYTES_FOR_SIZE     0x00002000  // Use KBytes as file size unit
-#define EVENT_TRACE_PRIVATE_IN_PROC         0x00020000  // In process private logger
-#define EVENT_TRACE_MODE_RESERVED           0x00100000  // Reserved bit, used to signal Heap/Critsec tracing
-#define EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING 0x10000000  // Use this for low frequency sessions.
-#define EVENT_TRACE_SYSTEM_LOGGER_MODE      0x02000000  // Receive events from SystemTraceProvider
-#define EVENT_TRACE_ADDTO_TRIAGE_DUMP       0x80000000  // Add ETW buffers to triage dumps
-#define EVENT_TRACE_STOP_ON_HYBRID_SHUTDOWN 0x00400000  // Stop on hybrid shutdown
-#define EVENT_TRACE_PERSIST_ON_HYBRID_SHUTDOWN 0x00800000 // Persist on hybrid shutdown
+#define EVENT_TRACE_BUFFERING_MODE            0x00000400  // Buffering mode only
 #define EVENT_TRACE_INDEPENDENT_SESSION_MODE  0x08000000  // Independent logger session
-#define EVENT_TRACE_COMPRESSED_MODE         0x04000000 // Compressed logger session.
 
-// https://github.com/processhacker/processhacker/blob/e96989fd396b28f71c080edc7be9e7256b5229d0/KProcessHacker/thread.c
-#define MAX_STACK_DEPTH 256 // arbitrary
-#define RTL_WALK_USER_MODE_STACK 0x00000001
 ULONG KphCaptureStackBackTrace(
     _In_ ULONG FramesToSkip,
     _In_ ULONG FramesToCapture,
     _Out_writes_(FramesToCapture) PVOID* BackTrace,
     _Out_opt_ PULONG BackTraceHash
-)
-{
-    PVOID backTrace[MAX_STACK_DEPTH];
-    ULONG framesFound;
-    ULONG hash;
-    ULONG i;
-
-    // Skip the current frame (for this function).
-    FramesToSkip++;
-
-    // Ensure that we won't overrun the buffer.
-    if (FramesToCapture + FramesToSkip > MAX_STACK_DEPTH)
-        return 0;
-
-    // Walk the stack.
-    framesFound = RtlWalkFrameChain(
-        backTrace,
-        FramesToCapture + FramesToSkip,
-        0
-    );
-
-    //if (FlagOn(Flags, KPH_STACK_TRACE_CAPTURE_USER_STACK))
-    //{
-        framesFound += RtlWalkFrameChain(
-            &backTrace[framesFound],
-            (FramesToCapture + FramesToSkip) - framesFound,
-            RTL_WALK_USER_MODE_STACK
-        );
-//    }
-
-    // Return nothing if we found fewer frames than we wanted to skip.
-    if (framesFound <= FramesToSkip)
-        return 0;
-
-    // Copy over the stack trace. At the same time we calculate the stack trace hash by summing the
-    // addresses.
-    for (i = 0, hash = 0; i < FramesToCapture; i++)
-    {
-        if (FramesToSkip + i >= framesFound)
-            break;
-
-        BackTrace[i] = backTrace[FramesToSkip + i];
-        hash += PtrToUlong(BackTrace[i]);
-    }
-
-    if (BackTraceHash)
-        *BackTraceHash = hash;
-
-    return i;
-}
+);
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {

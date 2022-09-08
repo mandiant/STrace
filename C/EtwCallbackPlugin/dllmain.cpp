@@ -39,20 +39,7 @@ ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does 
 extern "C" __declspec(dllexport) void StpDeInitialize() {
     LOG_INFO("Plugin DeInitializing...\r\n");
 
-    GUID providerGuid;
-    providerGuid.Data1 = 0xd1d93ef7;
-    providerGuid.Data2 = 0xe1f2;
-    providerGuid.Data3 = 0x4f45;
-    providerGuid.Data4[0] = 0x99;
-    providerGuid.Data4[1] = 0x43;
-    providerGuid.Data4[2] = 0x03;
-    providerGuid.Data4[3] = 0xd2;
-    providerGuid.Data4[4] = 0x45;
-    providerGuid.Data4[5] = 0xfe;
-    providerGuid.Data4[6] = 0x6c;
-    providerGuid.Data4[7] = 0x00;
-
-    NTSTATUS ret = g_Apis.pEtwUnSetCallback(providerGuid);
+    NTSTATUS ret = g_Apis.pEtwUnSetCallback();
     LOG_INFO("Plugin DeInitialise returned 0x%08X\r\n", ret);
 
     LOG_INFO("Plugin DeInitialized\r\n");

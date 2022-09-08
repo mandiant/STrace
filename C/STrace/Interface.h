@@ -37,7 +37,7 @@ typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const 
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName, BOOLEAN isEntry);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
-typedef NTSTATUS(*tUnSetEtwCallbackApi)(GUID providerGuid);
+typedef NTSTATUS(*tUnSetEtwCallbackApi)();
 typedef PVOID(NTAPI*tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
@@ -124,7 +124,7 @@ public:
 
 		// trace done, alloc our copy
 		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
-		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
+		frames = (StackFrame*)ExAllocatePool2(POOL_FLAG_NON_PAGED_EXECUTE, frameArraySize, DRIVER_POOL_TAG);
 		if (frames) {
 			frameDepth = FRAME_DEPTH;
 			memset(frames, 0, frameArraySize);

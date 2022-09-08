@@ -3,12 +3,11 @@
 #include <ntifs.h>
 #include <ntstatus.h>
 
+#include "Etw.h"
 #include "DynamicTrace.h"
 #include "Logger.h"
 #include "ManualMap.h"
 #include "Interface.h"
-
-constexpr GUID ETW_SESSION_GUID = { 0x11111111, 0x2222, 0x3333, { 0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55 } };
 
 class PluginData {
 public:
@@ -103,69 +102,19 @@ NTSTATUS SetEtwCallback(GUID providerGuid)
         return STATUS_UNSUCCESSFUL;
     }
 
-    SIZE_T eventPropertiesSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(UNICODE_STRING) + (wcslen(L"DTraceLoggingSession") * 2);
-    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePool(NonPagedPool, eventPropertiesSize);
-    if (!eventProperties) {
-        return STATUS_UNSUCCESSFUL;
-    }
-    memset(eventProperties, 0, eventPropertiesSize);
-    eventProperties->Wnode.BufferSize = 0xB0;
-    eventProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-    eventProperties->Wnode.Guid = ETW_SESSION_GUID;
-    eventProperties->LogFileMode = EVENT_TRACE_INDEPENDENT_SESSION_MODE | EVENT_TRACE_BUFFERING_MODE;
-    eventProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(UNICODE_STRING);
-
-    // nt!EtwpCaptureString seems to expect a UNICODE_STRING?
-    // This is not documented anywhere, MSDN says this should just be the null-terminated wide string
-    UNICODE_STRING loggerName;
-    loggerName.Length = (USHORT)(wcslen(L"DTraceLoggingSession") * 2);
-    loggerName.MaximumLength = (USHORT)(wcslen(L"DTraceLoggingSession") * 2);
-    loggerName.Buffer = (wchar_t*)(((PUCHAR)eventProperties) + eventProperties->LoggerNameOffset);
-    memcpy((wchar_t*)(((PUCHAR)eventProperties) + sizeof(EVENT_TRACE_PROPERTIES_V2)), &loggerName, sizeof(UNICODE_STRING));
-    wcscpy(loggerName.Buffer, L"DTraceLoggingSession");
-
-    ULONG returnSize = 0;
-    if (ZwTraceControl(EtwpStartTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize) != STATUS_SUCCESS) {
-        ExFreePool(eventProperties);
-        return STATUS_UNSUCCESSFUL;
+    TRACEHANDLE traceHandle = 0;
+    NTSTATUS status = EtwStartTracingSession(OUT &traceHandle);
+    if (status != STATUS_SUCCESS)
+    {
+        return status;
     }
 
-    ULONG traceId = eventProperties->Wnode.Version;
-    return TraceSystemApi->EtwRegisterEventCallback(traceId, (ULONG64)&DtEtwpEventCallback, 0);
+    return TraceSystemApi->EtwRegisterEventCallback((UINT32)traceHandle, (ULONG64)&DtEtwpEventCallback, 0);
 }
 
-NTSTATUS UnSetEtwCallback(GUID providerGuid)
+NTSTATUS UnSetEtwCallback()
 {
-    UNREFERENCED_PARAMETER(providerGuid);
-
-    SIZE_T eventPropertiesSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(UNICODE_STRING) + (wcslen(L"DTraceLoggingSession") * 2);
-    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePool(NonPagedPool, eventPropertiesSize);
-    if (!eventProperties) {
-        return STATUS_UNSUCCESSFUL;
-    }
-    memset(eventProperties, 0, eventPropertiesSize);
-    eventProperties->Wnode.BufferSize = 0xB0;
-    eventProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-    eventProperties->Wnode.Guid = ETW_SESSION_GUID;
-    eventProperties->LogFileMode = EVENT_TRACE_INDEPENDENT_SESSION_MODE | EVENT_TRACE_BUFFERING_MODE;
-    eventProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(UNICODE_STRING);
-
-    // nt!EtwpCaptureString seems to expect a UNICODE_STRING?
-    // This is not documented anywhere, MSDN says this should just be the null-terminated wide string
-    UNICODE_STRING loggerName;
-    loggerName.Length = (USHORT)(wcslen(L"DTraceLoggingSession") * 2);
-    loggerName.MaximumLength = (USHORT)(wcslen(L"DTraceLoggingSession") * 2);
-    loggerName.Buffer = (wchar_t*)(((PUCHAR)eventProperties) + eventProperties->LoggerNameOffset);
-    memcpy((wchar_t*)(((PUCHAR)eventProperties) + sizeof(EVENT_TRACE_PROPERTIES_V2)), &loggerName, sizeof(UNICODE_STRING));
-    wcscpy(loggerName.Buffer, L"DTraceLoggingSession");
-
-    ULONG returnSize = 0;
-    if (ZwTraceControl(EtwpStopTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize) != STATUS_SUCCESS) {
-        ExFreePool(eventProperties);
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    return STATUS_SUCCESS;
+    return EtwStopTracingSession();
 }
 
 bool LogInitialized = false;
