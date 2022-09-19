@@ -5,6 +5,24 @@ constexpr GUID ETW_SESSION_GUID = { 0x11111111, 0x2222, 0x3333, { 0x44, 0x44, 0x
 
 PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties();
 
+/**
+Format of a message to subscribe a provider to a session.
+**/
+constexpr size_t SubscribeProviderMessagePayloadSize = 0x78;
+typedef struct _SubscribeProviderMessage
+{
+    ETW_NOTIFICATION_HEADER Header;
+    ULONG ControlCode;
+    UCHAR Level;
+    UCHAR field_4D;
+    USHORT TraceHandle;
+    ULONG EnableProperty;
+    ULONG field_54;
+    ULONGLONG MatchAnyKeyword;
+    ULONGLONG MatchAllKeyword;
+    unsigned char Payload[88];
+} SubscribeProviderMessage;
+
 NTSTATUS EtwStartTracingSession(OUT TRACEHANDLE* pTraceHandle)
 {
     PEVENT_TRACE_PROPERTIES_V2 eventProperties = AllocEventProperties();
@@ -35,6 +53,30 @@ NTSTATUS EtwStopTracingSession()
     NTSTATUS status = ZwTraceControl(EtwpStopTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize);
     ExFreePool(eventProperties);
     return status;
+}
+
+NTSTATUS EtwAddProviderToTracingSession(TRACEHANDLE TraceHandle, GUID ProviderGuid)
+{
+    SubscribeProviderMessage notification;
+    memset(&notification, 0, sizeof(SubscribeProviderMessage));
+    notification.Header.NotificationType = EtwNotificationTypeEnable;
+    notification.Header.NotificationSize = SubscribeProviderMessagePayloadSize;
+    notification.Header.DestinationGuid = ProviderGuid;
+    notification.Header.Reserved2 = 0x00000000FFFFFFFF;
+    notification.ControlCode = EVENT_CONTROL_CODE_ENABLE_PROVIDER;
+    notification.Level = TRACE_LEVEL_VERBOSE;
+    notification.TraceHandle = (USHORT)(TraceHandle & 0x000000000000FFFF);
+
+    // <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/control/sendnotification.htm>
+    ULONG returnSize = 0;
+    return ZwTraceControl(
+        EtwpSendNotification,
+        &notification,
+        SubscribeProviderMessagePayloadSize,
+        &notification,
+        sizeof(ETW_NOTIFICATION_HEADER),
+        &returnSize
+    );
 }
 
 PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties()

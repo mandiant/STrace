@@ -7,6 +7,9 @@
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
 
+// Microsoft-Windows-Kernel-Memory
+constexpr GUID ProviderGuid = { 0xd1d93ef7, 0xe1f2, 0x4f45, { 0x99, 0x43, 0x03, 0xd2, 0x45, 0xfe, 0x6c, 0x00 } };
+
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt,   __VA_ARGS__)
@@ -16,20 +19,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis & pApis) {
     g_Apis = pApis;
     LOG_INFO("Plugin Initializing...\r\n");
 
-    GUID providerGuid;
-    providerGuid.Data1 = 0xd1d93ef7;
-    providerGuid.Data2 = 0xe1f2;
-    providerGuid.Data3 = 0x4f45;
-    providerGuid.Data4[0] = 0x99;
-    providerGuid.Data4[1] = 0x43;
-    providerGuid.Data4[2] = 0x03;
-    providerGuid.Data4[3] = 0xd2;
-    providerGuid.Data4[4] = 0x45;
-    providerGuid.Data4[5] = 0xfe;
-    providerGuid.Data4[6] = 0x6c;
-    providerGuid.Data4[7] = 0x00;
-
-    NTSTATUS ret = g_Apis.pEtwSetCallback(providerGuid);
+    NTSTATUS ret = g_Apis.pEtwSetCallback(ProviderGuid);
     LOG_INFO("Plugin Initialise returned 0x%08X\r\n", ret);
 
     LOG_INFO("Plugin Initialized\r\n");

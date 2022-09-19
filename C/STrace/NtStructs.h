@@ -182,16 +182,43 @@ typedef struct _EVENT_HEADER
 } EVENT_HEADER, * PEVENT_HEADER;
 #pragma warning( default : 4201 )
 
-#define EtwpStartTrace		1
-#define EtwpStopTrace		2
-#define EtwpQueryTrace		3
-#define EtwpUpdateTrace		4
-#define EtwpFlushTrace		5
+// <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/notification_header.htm?tx=43>
+typedef struct _ETW_NOTIFICATION_HEADER
+{
+    ULONG NotificationType;
+    ULONG NotificationSize;
+    ULONG Offset;
+    ULONG ReplyRequested;
+    ULONG Timeout;
+    union {
+        ULONG ReplyCount;
+        ULONG NotifyeeCount;
+    };
+    ULONGLONG Reserved2;
+    ULONG TargetPID;
+    ULONG SourcePID;
+    GUID DestinationGuid;
+    GUID SourceGuid;
+} ETW_NOTIFICATION_HEADER, * PETW_NOTIFICATION_HEADER;
+
+#define EVENT_CONTROL_CODE_ENABLE_PROVIDER 1
+
+#define TRACE_LEVEL_VERBOSE  5
+
+#define EtwpStartTrace		 1
+#define EtwpStopTrace		 2
+#define EtwpQueryTrace		 3
+#define EtwpUpdateTrace		 4
+#define EtwpFlushTrace		 5
+#define EtwpSendNotification 17
 
 #define WNODE_FLAG_TRACED_GUID			      0x00020000  // denotes a trace
 
 #define EVENT_TRACE_BUFFERING_MODE            0x00000400  // Buffering mode only
 #define EVENT_TRACE_INDEPENDENT_SESSION_MODE  0x08000000  // Independent logger session
+
+// <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/notification_type.htm?tx=43,44&ts=0,259>
+#define EtwNotificationTypeEnable  3
 
 ULONG KphCaptureStackBackTrace(
     _In_ ULONG FramesToSkip,

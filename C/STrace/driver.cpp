@@ -96,16 +96,18 @@ NTSTATUS UnSetCallbackApi(const char* syscallName, BOOLEAN isEntry) {
 
 NTSTATUS SetEtwCallback(GUID providerGuid)
 {
-    UNREFERENCED_PARAMETER(providerGuid);
-
     if (!TraceSystemApi || !TraceSystemApi->EtwRegisterEventCallback) {
         return STATUS_UNSUCCESSFUL;
     }
 
     TRACEHANDLE traceHandle = 0;
     NTSTATUS status = EtwStartTracingSession(OUT &traceHandle);
-    if (status != STATUS_SUCCESS)
-    {
+    if (status != STATUS_SUCCESS) {
+        return status;
+    }
+
+    status = EtwAddProviderToTracingSession(traceHandle, providerGuid);
+    if (status != STATUS_SUCCESS) {
         return status;
     }
 
@@ -185,15 +187,14 @@ ASSERT_INTERFACE_IMPLEMENTED(StpCallbackReturn, tStpCallbackReturn, "StpCallback
 
 /**
 pEventHeader: Information about the received event.
-a:
+a: TODO: what is a
 pProviderGuid: GUID of the ETW provider that created the event.
-b:
+b: TODO: what is b
 **/
 extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b)
 {
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe() && pluginData.isLoaded() && pluginData.pDtEtwpEventCallback) {
-        DbgBreakPoint();
         pluginData.pDtEtwpEventCallback(pEventHeader, a, pProviderGuid, b);
     }
     TraceSystemApi->ExitProbe();
