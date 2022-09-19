@@ -383,7 +383,7 @@ fn get_pb_dl_style() -> ProgressStyle {
 
 #[tokio::main]
 async fn main() {
-    let matches = clap::App::new("flareup server")
+    let matches = clap::App::new("PDBReSym")
     .author("Stephen Eckels")
     .arg(
         clap::Arg::new("logfile").help("Path to strace log file").required(false)
