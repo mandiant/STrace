@@ -31,7 +31,14 @@ NTSTATUS EtwStartTracingSession(OUT TRACEHANDLE* pTraceHandle)
     }
 
     ULONG returnSize = 0;
-    NTSTATUS status = ZwTraceControl(EtwpStartTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize);
+    NTSTATUS status = ZwTraceControl(
+        EtwpStartTrace,
+        eventProperties,
+        eventProperties->Wnode.BufferSize,
+        eventProperties,
+        eventProperties->Wnode.BufferSize,
+        &returnSize
+    );
     if (status == STATUS_SUCCESS) {
         *pTraceHandle = eventProperties->Wnode.Version;
     } else {
@@ -50,7 +57,14 @@ NTSTATUS EtwStopTracingSession()
     }
 
     ULONG returnSize = 0;
-    NTSTATUS status = ZwTraceControl(EtwpStopTrace, eventProperties, eventProperties->Wnode.BufferSize, eventProperties, eventProperties->Wnode.BufferSize, &returnSize);
+    NTSTATUS status = ZwTraceControl(
+        EtwpStopTrace,
+        eventProperties,
+        eventProperties->Wnode.BufferSize,
+        eventProperties,
+        eventProperties->Wnode.BufferSize,
+        &returnSize
+    );
     ExFreePool(eventProperties);
     return status;
 }

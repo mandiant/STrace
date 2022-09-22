@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <evntcons.h>
 #include <type_traits>
-#include "crt.h"
 
 class MachineState
 {
@@ -92,22 +91,6 @@ T ResolveApi(const wchar_t* name, PluginApis& apis) {
 	auto ustr = WideToUnicodeString(name);
 	return (T)apis.pGetSystemRoutineAddress(&ustr);
 }
-
-class CallerInfo
-{
-public:
-	struct StackFrame {
-		uint64_t frameaddress;
-		uint64_t modulebase;;
-		char modulePath[MAX_PATH];
-	};
-
-	char processName[100];
-	uint64_t processId;
-	StackFrame* frames;
-	uint8_t frameDepth;
-	bool isWow64;
-};
 
 typedef void(*tStpInitialize)(PluginApis& pApis);
 typedef void(*tStpDeInitialize)();

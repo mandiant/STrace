@@ -21,7 +21,6 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis & pApis) {
 
     NTSTATUS ret = g_Apis.pEtwSetCallback(ProviderGuid);
     LOG_INFO("Plugin Initialise returned 0x%08X\r\n", ret);
-
     LOG_INFO("Plugin Initialized\r\n");
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does not match the interface type");
@@ -31,7 +30,6 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
 
     NTSTATUS ret = g_Apis.pEtwUnSetCallback();
     LOG_INFO("Plugin DeInitialise returned 0x%08X\r\n", ret);
-
     LOG_INFO("Plugin DeInitialized\r\n");
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpDeInitialize, tStpDeInitialize, "StpDeInitialize does not match the interface type");

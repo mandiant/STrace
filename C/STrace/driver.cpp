@@ -1,5 +1,3 @@
-//#include <evntcons.h>
-//#include <evntrace.h>
 #include <ntifs.h>
 #include <ntstatus.h>
 
