@@ -8,7 +8,6 @@ PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties();
 /**
 Format of a message to subscribe a provider to a session.
 **/
-constexpr size_t SubscribeProviderMessagePayloadSize = 0x78;
 typedef struct _SubscribeProviderMessage
 {
     ETW_NOTIFICATION_HEADER Header;
@@ -20,7 +19,7 @@ typedef struct _SubscribeProviderMessage
     ULONG field_54;
     ULONGLONG MatchAnyKeyword;
     ULONGLONG MatchAllKeyword;
-    unsigned char Payload[88];
+    UCHAR Unknown[16];
 } SubscribeProviderMessage;
 
 NTSTATUS EtwStartTracingSession(OUT TRACEHANDLE* pTraceHandle)
@@ -74,7 +73,7 @@ NTSTATUS EtwAddProviderToTracingSession(TRACEHANDLE TraceHandle, GUID ProviderGu
     SubscribeProviderMessage notification;
     memset(&notification, 0, sizeof(SubscribeProviderMessage));
     notification.Header.NotificationType = EtwNotificationTypeEnable;
-    notification.Header.NotificationSize = SubscribeProviderMessagePayloadSize;
+    notification.Header.NotificationSize = sizeof(SubscribeProviderMessage);
     notification.Header.DestinationGuid = ProviderGuid;
     notification.Header.Reserved2 = 0x00000000FFFFFFFF;
     notification.ControlCode = EVENT_CONTROL_CODE_ENABLE_PROVIDER;
@@ -86,7 +85,7 @@ NTSTATUS EtwAddProviderToTracingSession(TRACEHANDLE TraceHandle, GUID ProviderGu
     return ZwTraceControl(
         EtwpSendNotification,
         &notification,
-        SubscribeProviderMessagePayloadSize,
+        notification.Header.NotificationSize,
         &notification,
         sizeof(ETW_NOTIFICATION_HEADER),
         &returnSize

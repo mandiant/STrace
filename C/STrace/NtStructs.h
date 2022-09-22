@@ -205,14 +205,11 @@ typedef struct _ETW_NOTIFICATION_HEADER
 
 #define TRACE_LEVEL_VERBOSE  5
 
-#define EtwpStartTrace		 1
-#define EtwpStopTrace		 2
-#define EtwpQueryTrace		 3
-#define EtwpUpdateTrace		 4
-#define EtwpFlushTrace		 5
+#define EtwpStartTrace       1
+#define EtwpStopTrace        2
 #define EtwpSendNotification 17
 
-#define WNODE_FLAG_TRACED_GUID			      0x00020000  // denotes a trace
+#define WNODE_FLAG_TRACED_GUID                0x00020000  // denotes a trace
 
 #define EVENT_TRACE_BUFFERING_MODE            0x00000400  // Buffering mode only
 #define EVENT_TRACE_INDEPENDENT_SESSION_MODE  0x08000000  // Independent logger session
