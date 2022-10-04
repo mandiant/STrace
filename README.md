@@ -30,7 +30,7 @@ This project is largely split between it's C++ and Rust components. The C driver
 
 # Installation & Setup
 
-Build the driver and cli, then run the installer powershell script in install folder:
+Build the driver and cli, move the files to the same folder as the script, then run the powershell script in install folder as admin:
 ```
 ./install_as_admin.ps1
 ```
