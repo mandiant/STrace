@@ -99,64 +99,130 @@ typedef struct _PEB32
     ULONG ApiSetMap;
 } PEB32, * PPEB32;
 
-// https://github.com/processhacker/processhacker/blob/e96989fd396b28f71c080edc7be9e7256b5229d0/KProcessHacker/thread.c
-#define MAX_STACK_DEPTH 256 // arbitrary
-#define RTL_WALK_USER_MODE_STACK 0x00000001
+#pragma warning( disable : 4201 )
+typedef struct _WNODE_HEADER {
+    ULONG BufferSize;
+    ULONG ProviderId;
+    union {
+        ULONG64 HistoricalContext;
+        struct {
+            ULONG Version;
+            ULONG Linkage;
+        };
+    };
+    union {
+        HANDLE        KernelHandle;
+        LARGE_INTEGER TimeStamp;
+    };
+    GUID  Guid;
+    ULONG ClientContext;
+    ULONG Flags;
+} WNODE_HEADER, * PWNODE_HEADER;
+
+typedef struct _EVENT_TRACE_PROPERTIES_V2 {
+    WNODE_HEADER             Wnode;
+    ULONG                    BufferSize;
+    ULONG                    MinimumBuffers;
+    ULONG                    MaximumBuffers;
+    ULONG                    MaximumFileSize;
+    ULONG                    LogFileMode;
+    ULONG                    FlushTimer;
+    ULONG                    EnableFlags;
+    union {
+        LONG AgeLimit;
+        LONG FlushThreshold;
+    } DUMMYUNIONNAME;
+    ULONG                    NumberOfBuffers;
+    ULONG                    FreeBuffers;
+    ULONG                    EventsLost;
+    ULONG                    BuffersWritten;
+    ULONG                    LogBuffersLost;
+    ULONG                    RealTimeBuffersLost;
+    HANDLE                   LoggerThreadId;
+    ULONG                    LogFileNameOffset;
+    ULONG                    LoggerNameOffset;
+    union {
+        struct {
+            ULONG VersionNumber : 8;
+        } DUMMYSTRUCTNAME;
+        ULONG V2Control;
+    } DUMMYUNIONNAME2;
+    ULONG                    FilterDescCount;
+    PEVENT_FILTER_DESCRIPTOR FilterDesc;
+    union {
+        struct {
+            ULONG Wow : 1;
+            ULONG QpcDeltaTracking : 1;
+            ULONG LargeMdlPages : 1;
+            ULONG ExcludeKernelStack : 1;
+        } DUMMYSTRUCTNAME;
+        ULONG64 V2Options;
+    } DUMMYUNIONNAME3;
+} EVENT_TRACE_PROPERTIES_V2, * PEVENT_TRACE_PROPERTIES_V2;
+
+typedef struct _EVENT_HEADER
+{
+    USHORT Size;
+    USHORT HeaderType;
+    USHORT Flags;
+    USHORT EventProperty;
+    ULONG ThreadId;
+    ULONG ProcessId;
+    LARGE_INTEGER TimeStamp;
+    GUID ProviderId;
+    EVENT_DESCRIPTOR EventDescriptor;
+    union {
+        struct {
+            ULONG KernelTime;
+            ULONG UserTime;
+        } DUMMYSTRUCTNAME;
+        ULONG64 ProcessorTime;
+    } DUMMYUNIONNAME;
+    GUID             ActivityId;
+} EVENT_HEADER, * PEVENT_HEADER;
+#pragma warning( default : 4201 )
+
+// <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/notification_header.htm?tx=43>
+typedef struct _ETW_NOTIFICATION_HEADER
+{
+    ULONG NotificationType;
+    ULONG NotificationSize;
+    ULONG Offset;
+    ULONG ReplyRequested;
+    ULONG Timeout;
+    union {
+        ULONG ReplyCount;
+        ULONG NotifyeeCount;
+    };
+    ULONGLONG Reserved2;
+    ULONG TargetPID;
+    ULONG SourcePID;
+    GUID DestinationGuid;
+    GUID SourceGuid;
+} ETW_NOTIFICATION_HEADER, * PETW_NOTIFICATION_HEADER;
+
+#define EVENT_CONTROL_CODE_ENABLE_PROVIDER 1
+
+#define TRACE_LEVEL_VERBOSE  5
+
+#define EtwpStartTrace       1
+#define EtwpStopTrace        2
+#define EtwpSendNotification 17
+
+#define WNODE_FLAG_TRACED_GUID                0x00020000  // denotes a trace
+
+#define EVENT_TRACE_BUFFERING_MODE            0x00000400  // Buffering mode only
+#define EVENT_TRACE_INDEPENDENT_SESSION_MODE  0x08000000  // Independent logger session
+
+// <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/notification_type.htm?tx=43,44&ts=0,259>
+#define EtwNotificationTypeEnable  3
+
 ULONG KphCaptureStackBackTrace(
     _In_ ULONG FramesToSkip,
     _In_ ULONG FramesToCapture,
     _Out_writes_(FramesToCapture) PVOID* BackTrace,
     _Out_opt_ PULONG BackTraceHash
-)
-{
-    PVOID backTrace[MAX_STACK_DEPTH];
-    ULONG framesFound;
-    ULONG hash;
-    ULONG i;
-
-    // Skip the current frame (for this function).
-    FramesToSkip++;
-
-    // Ensure that we won't overrun the buffer.
-    if (FramesToCapture + FramesToSkip > MAX_STACK_DEPTH)
-        return 0;
-
-    // Walk the stack.
-    framesFound = RtlWalkFrameChain(
-        backTrace,
-        FramesToCapture + FramesToSkip,
-        0
-    );
-
-    //if (FlagOn(Flags, KPH_STACK_TRACE_CAPTURE_USER_STACK))
-    //{
-        framesFound += RtlWalkFrameChain(
-            &backTrace[framesFound],
-            (FramesToCapture + FramesToSkip) - framesFound,
-            RTL_WALK_USER_MODE_STACK
-        );
-//    }
-
-    // Return nothing if we found fewer frames than we wanted to skip.
-    if (framesFound <= FramesToSkip)
-        return 0;
-
-    // Copy over the stack trace. At the same time we calculate the stack trace hash by summing the
-    // addresses.
-    for (i = 0, hash = 0; i < FramesToCapture; i++)
-    {
-        if (FramesToSkip + i >= framesFound)
-            break;
-
-        BackTrace[i] = backTrace[FramesToSkip + i];
-        hash += PtrToUlong(BackTrace[i]);
-    }
-
-    if (BackTraceHash)
-        *BackTraceHash = hash;
-
-    return i;
-}
+);
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {
@@ -428,6 +494,15 @@ extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwQuerySystemInformation(
     _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
     _In_ ULONG SystemInformationLength,
     _Out_opt_ PULONG ReturnLength
+);
+
+extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwTraceControl(
+    ULONG FunctionCode,
+    PVOID InBuffer,
+    ULONG InBufferLen,
+    PVOID OutBuffer,
+    ULONG OutBufferLen,
+    ULONG * ReturnSize
 );
 
 template<typename T>

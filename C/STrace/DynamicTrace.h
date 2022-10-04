@@ -25,7 +25,11 @@ struct TraceApi
   **/
   NTSTATUS(*KeSetSystemServiceCallback)(const char *syscallName, BOOLEAN isEntry, ULONG64 callback, ULONG64 probeId);
   void *KeSetTracepoint;
-  void *EtwRegisterEventCallback;
+
+  /**
+  This handles ETW probe registration and removal.
+  **/
+  NTSTATUS(*EtwRegisterEventCallback)(UINT32 a, ULONG64 callback, ULONG64 b);
   PKTHREAD(*PsGetBaseTrapFrame)(PKTHREAD thread, void* unk);
   void *KiGetTrapFrameRegister;
   void *MmEnumerateSystemImages;

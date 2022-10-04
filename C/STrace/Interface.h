@@ -36,16 +36,20 @@ public:
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName, BOOLEAN isEntry);
+typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
+typedef NTSTATUS(*tUnSetEtwCallbackApi)();
 typedef PVOID(NTAPI*tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
 class PluginApis {
 public:
 	PluginApis() = default;
-	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tSetCallbackApi setCallback, tUnSetCallbackApi unsetCallback, tTraceAccessMemory accessMemory) {
+	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tSetCallbackApi setCallback, tUnSetCallbackApi unsetCallback, tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback, tTraceAccessMemory accessMemory) {
 		pLogPrint = print;
 		pSetCallback = setCallback;
 		pUnsetCallback = unsetCallback;
+		pEtwSetCallback = etwSetCallback;
+		pEtwUnSetCallback = etwUnSetCallback;
 		pGetSystemRoutineAddress = getAddress;
 		pTraceAccessMemory = accessMemory;
 	}
@@ -53,6 +57,8 @@ public:
 	tLogPrintApi pLogPrint;
 	tSetCallbackApi pSetCallback;
 	tUnSetCallbackApi pUnsetCallback;
+	tSetEtwCallbackApi pEtwSetCallback;
+	tUnSetEtwCallbackApi pEtwUnSetCallback;
 	tMmGetSystemRoutineAddress pGetSystemRoutineAddress;
 	tTraceAccessMemory pTraceAccessMemory;
 };
@@ -118,7 +124,7 @@ public:
 
 		// trace done, alloc our copy
 		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
-		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
+		frames = (StackFrame*)ExAllocatePool2(POOL_FLAG_NON_PAGED_EXECUTE, frameArraySize, DRIVER_POOL_TAG);
 		if (frames) {
 			frameDepth = FRAME_DEPTH;
 			memset(frames, 0, frameArraySize);
@@ -265,6 +271,7 @@ private:
 typedef bool(*tStpIsTarget)(CallerInfo& callerinfo);
 typedef void(*tStpCallbackEntry)(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 typedef void(*tStpCallbackReturn)(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
+typedef void(*tDtEtwpEventCallback)(EVENT_HEADER* EventHeader, ULONG32 a, GUID* ProviderGuid, ULONG32 b);
 
 typedef void(*tStpCallbackEntryPlugin)(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo);
 typedef void(*tStpCallbackReturnPlugin)(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo);

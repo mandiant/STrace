@@ -1,6 +1,7 @@
 #include <ntifs.h>
 #include <ntstatus.h>
 
+#include "Etw.h"
 #include "DynamicTrace.h"
 #include "Logger.h"
 #include "ManualMap.h"
@@ -17,12 +18,13 @@ public:
     }
     
     // Must free old plugin data before setting new one
-    bool setPluginData(uint64_t base, tStpIsTarget istarget, tStpCallbackEntryPlugin entry, tStpCallbackReturnPlugin ret, tStpInitialize init, tStpDeInitialize deinit) {
+    bool setPluginData(uint64_t base, tStpIsTarget istarget, tStpCallbackEntryPlugin entry, tStpCallbackReturnPlugin ret, tStpInitialize init, tStpDeInitialize deinit, tDtEtwpEventCallback etw) {
         pCallbackEntry = entry;
         pCallbackReturn = ret;
         pInitialize = init;
         pDeInitialize = deinit;
         pIsTarget = istarget;
+        pDtEtwpEventCallback = etw;
 
         // set pImageBase last since it's used atomically for isLoaded
         auto expected = pImageBase;
@@ -49,6 +51,7 @@ public:
     tStpIsTarget pIsTarget;
     tStpCallbackEntryPlugin pCallbackEntry;
     tStpCallbackReturnPlugin pCallbackReturn;
+    tDtEtwpEventCallback pDtEtwpEventCallback;
 
     // zeroed immediately after use, these are optional
     tStpInitialize pInitialize;
@@ -61,6 +64,7 @@ private:
         pCallbackReturn = 0;
         pDeInitialize = 0;
         pIsTarget = 0;
+        pDtEtwpEventCallback = 0;
     }
 
     volatile uint64_t pImageBase;
@@ -69,6 +73,7 @@ private:
 // forward declare
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
+extern "C" __declspec(dllexport) void DtEtwpEventCallback(EVENT_HEADER* pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b);
 
 NTSTATUS SetCallbackApi(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
@@ -85,6 +90,31 @@ NTSTATUS UnSetCallbackApi(const char* syscallName, BOOLEAN isEntry) {
     }
 
     return TraceSystemApi->KeSetSystemServiceCallback(syscallName, isEntry, 0, 0);
+}
+
+NTSTATUS SetEtwCallback(GUID providerGuid)
+{
+    if (!TraceSystemApi || !TraceSystemApi->EtwRegisterEventCallback) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    TRACEHANDLE traceHandle = 0;
+    NTSTATUS status = EtwStartTracingSession(OUT &traceHandle);
+    if (status != STATUS_SUCCESS) {
+        return status;
+    }
+
+    status = EtwAddProviderToTracingSession(traceHandle, providerGuid);
+    if (status != STATUS_SUCCESS) {
+        return status;
+    }
+
+    return TraceSystemApi->EtwRegisterEventCallback((UINT32)traceHandle, (ULONG64)&DtEtwpEventCallback, 0);
+}
+
+NTSTATUS UnSetEtwCallback()
+{
+    return EtwStopTracingSession();
 }
 
 bool LogInitialized = false;
@@ -153,6 +183,22 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackReturn, tStpCallbackReturn, "StpCallbackReturn does not match the interface type");
 
+/**
+pEventHeader: Information about the received event.
+a: TODO: what is a
+pProviderGuid: GUID of the ETW provider that created the event.
+b: TODO: what is b
+**/
+extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b)
+{
+    TraceSystemApi->EnterProbe();
+    if (!TraceSystemApi->isCallFromInsideProbe() && pluginData.isLoaded() && pluginData.pDtEtwpEventCallback) {
+        pluginData.pDtEtwpEventCallback(pEventHeader, a, pProviderGuid, b);
+    }
+    TraceSystemApi->ExitProbe();
+}
+ASSERT_INTERFACE_IMPLEMENTED(DtEtwpEventCallback, tDtEtwpEventCallback, "DtEtwpEventCallback does not match the interface type");
+
 extern "C" __declspec(dllexport) NTSTATUS TraceInitSystem(TraceApi*** ppTraceApi, TraceCallbacks* pTraceTable, DWORD64* pMemTraceRoutine)
 {
 	// Set pointer to our global API table. NtosKern fills this table of pointers for us after load
@@ -163,8 +209,7 @@ extern "C" __declspec(dllexport) NTSTATUS TraceInitSystem(TraceApi*** ppTraceApi
 		for (DWORD64 idx = 0; idx < max_idx; idx++) {
 			switch (idx) {
 			case 1:
-				// DtEtwpEventCallback
-				pTraceTable->pCallbacks[idx] = &NotImplementedRoutine; 
+				pTraceTable->pCallbacks[idx] = &DtEtwpEventCallback;
 				break;
 			case 2:
 				pTraceTable->pCallbacks[idx] = &StpCallbackEntry; 
@@ -309,9 +354,10 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
         auto init = (tStpInitialize)g_DllMapper.getExport(dllBase, "StpInitialize");
         auto deinit = (tStpDeInitialize)g_DllMapper.getExport(dllBase, "StpDeInitialize");
         auto istarget = (tStpIsTarget)g_DllMapper.getExport(dllBase, "StpIsTarget");
+        auto etw = (tDtEtwpEventCallback)g_DllMapper.getExport(dllBase, "DtEtwpEventCallback");
 
         uint32_t tries = 0;
-        while (!pluginData.setPluginData(dllBase, istarget, entry, ret, init, deinit)) {
+        while (!pluginData.setPluginData(dllBase, istarget, entry, ret, init, deinit, etw)) {
             if (tries++ >= 10) {
                 LOG_ERROR("[!] Atomic plugin load failed\r\n");
                 status = STATUS_UNSUCCESSFUL;
@@ -321,7 +367,7 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
 
         if (pluginData.pInitialize) {
             // The plugin must immediately copy this structure. It must be a local to avoid C++ static initializers, which are created if its a global
-            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &TraceAccessMemory);
+            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory);
             pluginData.pInitialize(pluginApis);
 
             // prevent double initialize regardless of rest
