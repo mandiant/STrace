@@ -65,7 +65,7 @@ struct TraceApi
 	}
 private:
 	// helper routines I created based off of dtrace's internals, that use fields within this apis
-	__forceinline void setTlsDataCalldepth(uint64_t value, bool& allocated, bool shouldFree) {
+	DECLSPEC_NOINLINE void setTlsDataCalldepth(uint64_t value, bool& allocated, bool shouldFree) {
 		allocated = false;
 
 		PKTHREAD pThread = KeGetCurrentThread();
@@ -77,28 +77,34 @@ private:
 			return;
 		}
 
-		// array of pointers
-		uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
+		__try {
+			// array of pointers
+			uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
 
-		// 0th ptr is TLSData*
-		if (!pTlsArray[0]) {
-			pTlsArray[0] = (uint64_t)ExAllocateFromLookasideListEx(&TLSLookasideList);
+			// 0th ptr is TLSData*
 			if (!pTlsArray[0]) {
-				__debugbreak();
-				return;
+				pTlsArray[0] = (uint64_t)ExAllocateFromLookasideListEx(&TLSLookasideList);
+				if (!pTlsArray[0]) {
+					__debugbreak();
+					return;
+				}
+				allocated = true;
 			}
-			allocated = true;
-		}
 
-		// if allowed, free the data when the value is zero
-		if (shouldFree && value == 0) {
-			ExFreeToLookasideListEx(&TLSLookasideList, (char*)pTlsArray[0]);
-		} else {
-			((TLSData*)pTlsArray[0])->calldepth = value;
+			// if allowed, free the data when the value is zero
+			if (shouldFree && value == 0) {
+				ExFreeToLookasideListEx(&TLSLookasideList, (char*)pTlsArray[0]);
+				pTlsArray[0] = 0;
+			} else {
+				((TLSData*)pTlsArray[0])->calldepth = value;
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+		
 		}
 	}
 
-	__forceinline uint64_t getTlsDataCalldepth() {
+	DECLSPEC_NOINLINE uint64_t getTlsDataCalldepth() {
 		PKTHREAD pThread = KeGetCurrentThread();
 
 		// this is always one based on what i've seen. This might also be 'is tracing tls supported' rather than array size.
@@ -109,15 +115,22 @@ private:
 		}
 
 		// array of pointers
-		uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
-		if (!pTlsArray[0]) {
-			return 0;
-		}
+		uint64_t value = 0;
+		__try {
+			uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
+			if (!pTlsArray[0]) {
+				return 0;
+			}
 
-		return ((TLSData*)pTlsArray[0])->calldepth;
+			value = ((TLSData*)pTlsArray[0])->calldepth;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+
+		}
+		return value;
 	}
 
-	__forceinline TLSData* getRawTLSData() {
+	DECLSPEC_NOINLINE TLSData* getRawTLSData() {
 		PKTHREAD pThread = KeGetCurrentThread();
 
 		// this is always one based on what i've seen. This might also be 'is tracing tls supported' rather than array size.

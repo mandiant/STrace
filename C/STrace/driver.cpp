@@ -235,7 +235,7 @@ extern "C" __declspec(dllexport) NTSTATUS TraceInitSystem(TraceApi*** ppTraceApi
 		for (DWORD64 idx = 0; idx < max_idx; idx++) {
 			switch (idx) {
 			case 1:
-				pTraceTable->pCallbacks[idx] = &NotImplementedRoutine;
+				pTraceTable->pCallbacks[idx] = &DtEtwpEventCallback;
 				break;
 			case 2:
 				pTraceTable->pCallbacks[idx] = &StpCallbackEntry; 

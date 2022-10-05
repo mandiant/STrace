@@ -67,7 +67,7 @@
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <PreprocessorDefinitions>POOL_NX_OPTIN_AUTO=1;DBG=1;ENABLE_LOG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>POOL_NX_OPTIN_AUTO=1;DBG=1;ENABLE_LOG=1;%(PreprocessorDefinitions);NTDDI_VERSION=0x0A000008</PreprocessorDefinitions>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
       <ConformanceMode>true</ConformanceMode>
@@ -95,7 +95,7 @@
       <DiagnosticsFormat>Caret</DiagnosticsFormat>
       <Optimization>MaxSpeed</Optimization>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <PreprocessorDefinitions>ENABLE_LOG;POOL_NX_OPTIN_AUTO=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENABLE_LOG;POOL_NX_OPTIN_AUTO=1;%(PreprocessorDefinitions);NTDDI_VERSION=0x0A000008</PreprocessorDefinitions>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
       <ConformanceMode>true</ConformanceMode>
