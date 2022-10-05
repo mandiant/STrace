@@ -151,11 +151,11 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         return;
     }
 
-    bool allocatedTls = TraceSystemApi->EnterProbe();
+    bool calledChildren = TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         CallerInfo callerInfo;
         if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
-            callerInfo.CaptureStackTrace(allocatedTls ? 1 : 0);
+            callerInfo.CaptureStackTrace(calledChildren ? 1 : 0);
 
             MachineState ctx = { 0 };
             ctx.pRegArgs = pArgs;

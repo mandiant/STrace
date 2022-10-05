@@ -6,8 +6,16 @@
 // ntoskrn has hardcoded check for this when doing TraceAccessMemory API calls
 static const uint64_t DTRACE_IRQL = 15;
 
+/*
+TLSData lives per kthread, and exists from [entry, exit] callback. A new TLSData get allocated
+after each entry -> exit. Ex: entry, *alloc*, exit, *de-alloc*, repeat...
+
+To track when to do this, the calldepth is used. We free when it's zero, and only if it was zeroed by
+in an exit probe. There's some boolean flags that guard which things can occur when. Since we call
+these early in the callbacks, we need to check if we called OS apis, so that we can skip those frames for 
+callstack tracing.
+*/
 struct TLSData {
-	uint64_t magic;
 	uint64_t calldepth;
 	uint64_t arbitraryData[64];
 };
@@ -47,17 +55,17 @@ struct TraceApi
 	__forceinline bool EnterProbe() {
 		auto recursiveCallDepth = getTlsDataCalldepth();
 
-		bool allocated = false;
-		setTlsDataCalldepth(recursiveCallDepth + 1, allocated, false);
-		return allocated;
+		bool called_children = false;
+		setTlsDataCalldepth(recursiveCallDepth + 1, called_children, false);
+		return called_children;
 	}
 
 	__forceinline bool ExitProbe(bool shouldFree = false) {
 		auto recursiveCallDepth = getTlsDataCalldepth();
 
-		bool allocated = false;
-		setTlsDataCalldepth(recursiveCallDepth - 1, allocated, shouldFree);
-		return allocated;
+		bool called_children = false;
+		setTlsDataCalldepth(recursiveCallDepth - 1, called_children, shouldFree);
+		return called_children;
 	}
 
 	__forceinline bool isCallFromInsideProbe() {
@@ -65,8 +73,8 @@ struct TraceApi
 	}
 private:
 	// helper routines I created based off of dtrace's internals, that use fields within this apis
-	DECLSPEC_NOINLINE void setTlsDataCalldepth(uint64_t value, bool& allocated, bool shouldFree) {
-		allocated = false;
+	DECLSPEC_NOINLINE void setTlsDataCalldepth(uint64_t value, bool& calledChildren, bool shouldFree) {
+		calledChildren = false;
 
 		PKTHREAD pThread = KeGetCurrentThread();
 
@@ -88,13 +96,14 @@ private:
 					__debugbreak();
 					return;
 				}
-				allocated = true;
+				calledChildren = true;
 			}
 
 			// if allowed, free the data when the value is zero
 			if (shouldFree && value == 0) {
 				ExFreeToLookasideListEx(&TLSLookasideList, (char*)pTlsArray[0]);
 				pTlsArray[0] = 0;
+				calledChildren = true;
 			} else {
 				((TLSData*)pTlsArray[0])->calldepth = value;
 			}
