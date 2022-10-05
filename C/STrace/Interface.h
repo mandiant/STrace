@@ -1,5 +1,7 @@
 // This defines all the things shared between usermode and kernel
 // Must be kept in sync with Interface.h in STraceCLI and STraceDll
+#pragma warning(disable: 4996) //exallocatepoolwithtag
+
 #pragma once
 #include <ntifs.h>
 #include <ntstatus.h>
@@ -34,8 +36,8 @@ public:
 };
 
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
-typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId);
-typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName, BOOLEAN isEntry);
+typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
+typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
 typedef NTSTATUS(*tUnSetEtwCallbackApi)();
 typedef PVOID(NTAPI*tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
@@ -116,15 +118,15 @@ public:
 		return strcmp((const char*)processName, procName) == 0;
 	}
 
-	__forceinline void CaptureStackTrace() {
+	__forceinline void CaptureStackTrace(uint32_t skipFrameCount = 0) {
 		uint64_t StackTraceData[FRAME_DEPTH] = { 0 };
 
 		// we forceinlined, so *this* frame should not exist, so we can skip nothing
-		const auto StackTraceFramesCount = KphCaptureStackBackTrace(0, FRAME_DEPTH, (PVOID*)StackTraceData, 0);
+		const auto StackTraceFramesCount = KphCaptureStackBackTrace((ULONG)skipFrameCount, FRAME_DEPTH, (PVOID*)StackTraceData, 0);
 
 		// trace done, alloc our copy
 		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
-		frames = (StackFrame*)ExAllocatePool2(POOL_FLAG_NON_PAGED_EXECUTE, frameArraySize, DRIVER_POOL_TAG);
+		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
 		if (frames) {
 			frameDepth = FRAME_DEPTH;
 			memset(frames, 0, frameArraySize);
@@ -210,7 +212,7 @@ private:
 					RtlUnicodeStringInit(&ustr, (PWCH)pEntry->FullDllName.Buffer);
 
 					char modulePath[MAX_PATH] = { 0 };
-					ANSI_STRING ansi;
+					ANSI_STRING ansi = {0};
 					ansi.Buffer = modulePath;
 					ansi.Length = 0;
 					ansi.MaximumLength = sizeof(modulePath);
@@ -241,7 +243,7 @@ private:
 					PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
 					char modulePath[MAX_PATH] = { 0 };
-					ANSI_STRING ansi;
+					ANSI_STRING ansi = {0};
 					ansi.Buffer = modulePath;
 					ansi.Length = 0;
 					ansi.MaximumLength = sizeof(modulePath);

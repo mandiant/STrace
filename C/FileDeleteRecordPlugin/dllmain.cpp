@@ -23,7 +23,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis = pApis;
     LOG_INFO("Plugin Initializing...\r\n");
 
-    g_Apis.pSetCallback("SetInformationFile", true, PROBE_IDS::IdSetInformationFile);
+    g_Apis.pSetCallback("SetInformationFile", PROBE_IDS::IdSetInformationFile);
     LOG_INFO("Plugin Initialized\r\n");
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does not match the interface type");
@@ -31,7 +31,7 @@ ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does 
 extern "C" __declspec(dllexport) void StpDeInitialize() {
     LOG_INFO("Plugin DeInitializing...\r\n");
 
-    g_Apis.pUnsetCallback("SetInformationFile", true);
+    g_Apis.pUnsetCallback("SetInformationFile");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }

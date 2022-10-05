@@ -6,6 +6,7 @@
 #include "config.h"
 #include "string.h"
 
+#define _ITERATOR_DEBUG_LEVEL 0
 #include <utility>
 #include <array>
 #include <span>
