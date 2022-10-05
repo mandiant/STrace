@@ -95,7 +95,7 @@ NTSTATUS EtwAddProviderToTracingSession(TRACEHANDLE TraceHandle, GUID ProviderGu
 PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties()
 {
     SIZE_T eventPropertiesSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(UNICODE_STRING) + (wcslen(ETW_SESSION_NAME) * 2);
-    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePool2(POOL_FLAG_NON_PAGED, eventPropertiesSize, 'wteS');
+    PEVENT_TRACE_PROPERTIES_V2 eventProperties = (PEVENT_TRACE_PROPERTIES_V2)ExAllocatePoolWithTag(NonPagedPoolNx, eventPropertiesSize, 'wteS');
     if (!eventProperties) {
         return NULL;
     }
@@ -108,7 +108,7 @@ PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties()
 
     // nt!EtwpCaptureString seems to expect a UNICODE_STRING?
     // This is not documented anywhere, MSDN says this should just be the null-terminated wide string
-    UNICODE_STRING loggerName;
+    UNICODE_STRING loggerName = {0};
     loggerName.Length = (USHORT)(wcslen(ETW_SESSION_NAME) * 2);
     loggerName.MaximumLength = (USHORT)(wcslen(ETW_SESSION_NAME) * 2);
     loggerName.Buffer = (wchar_t*)(((PUCHAR)eventProperties) + eventProperties->LoggerNameOffset);

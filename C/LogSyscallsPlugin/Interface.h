@@ -54,8 +54,8 @@ public:
 
 typedef LONG NTSTATUS;
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
-typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId);
-typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName, BOOLEAN isEntry);
+typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
+typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef PVOID(NTAPI* tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 

@@ -1,3 +1,4 @@
+#pragma warning(disable: 4996) //exallocatepoolwithtag
 #include <ntifs.h>
 #include <ntstatus.h>
 
@@ -73,23 +74,31 @@ private:
 // forward declare
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
-extern "C" __declspec(dllexport) void DtEtwpEventCallback(EVENT_HEADER* pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b);
+extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b);
 
-NTSTATUS SetCallbackApi(const char* syscallName, BOOLEAN isEntry, ULONG64 probeId) {
+NTSTATUS SetCallbackApi(const char* syscallName, ULONG64 probeId) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
         return STATUS_UNSUCCESSFUL;
     }
 
-    auto callback = (ULONG64)(isEntry ? (&StpCallbackEntry) : (&StpCallbackReturn));
-    return TraceSystemApi->KeSetSystemServiceCallback(syscallName, isEntry, callback, probeId);
+    // set both entry and exit callbacks. This is because this driver requires both due to how TLS data is managed in this design.
+    NTSTATUS status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, true, (ULONG64)&StpCallbackEntry, probeId);
+    if (NT_SUCCESS(status)) {
+        status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, false, (ULONG64)&StpCallbackReturn, probeId);
+    }
+    return status;
 }
 
-NTSTATUS UnSetCallbackApi(const char* syscallName, BOOLEAN isEntry) {
+NTSTATUS UnSetCallbackApi(const char* syscallName) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
         return STATUS_UNSUCCESSFUL;
     }
 
-    return TraceSystemApi->KeSetSystemServiceCallback(syscallName, isEntry, 0, 0);
+    NTSTATUS status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, true, 0, 0);
+    if (NT_SUCCESS(status)) {
+        status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, false, 0, 0);
+    }
+    return status;
 }
 
 NTSTATUS SetEtwCallback(GUID providerGuid)
@@ -137,11 +146,16 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 **/
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs)
 {
-    TraceSystemApi->EnterProbe();
+    // this is because TLS routines can allocate, could be changed. But this is simplest.
+    if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
+        return;
+    }
+
+    bool allocatedTls = TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         CallerInfo callerInfo;
         if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
-            callerInfo.CaptureStackTrace();
+            callerInfo.CaptureStackTrace(allocatedTls ? 1 : 0);
 
             MachineState ctx = { 0 };
             ctx.pRegArgs = pArgs;
@@ -166,6 +180,11 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 **/
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64 *pArgs, ULONG32 pArgSize, void* pStackArgs)
 {
+    // this is because TLS routines can allocate, could be changed. But this is simplest.
+    if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
+        return;
+    }
+
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         CallerInfo callerInfo;
@@ -179,7 +198,9 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             pluginData.pCallbackReturn(pService, probeId, ctx, callerInfo);
         }
     }
-    TraceSystemApi->ExitProbe();
+
+    // return probes should de-allocate TLS data if the call depth is at zero for this thread (TLS data lives from Entry-Exit)
+    TraceSystemApi->ExitProbe(true);
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackReturn, tStpCallbackReturn, "StpCallbackReturn does not match the interface type");
 
@@ -191,11 +212,16 @@ b: TODO: what is b
 **/
 extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b)
 {
+    // this is because TLS routines can allocate, could be changed. But this is simplest.
+    if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
+        return;
+    }
+
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe() && pluginData.isLoaded() && pluginData.pDtEtwpEventCallback) {
         pluginData.pDtEtwpEventCallback(pEventHeader, a, pProviderGuid, b);
     }
-    TraceSystemApi->ExitProbe();
+    TraceSystemApi->ExitProbe(true);
 }
 ASSERT_INTERFACE_IMPLEMENTED(DtEtwpEventCallback, tDtEtwpEventCallback, "DtEtwpEventCallback does not match the interface type");
 
@@ -209,7 +235,7 @@ extern "C" __declspec(dllexport) NTSTATUS TraceInitSystem(TraceApi*** ppTraceApi
 		for (DWORD64 idx = 0; idx < max_idx; idx++) {
 			switch (idx) {
 			case 1:
-				pTraceTable->pCallbacks[idx] = &DtEtwpEventCallback;
+				pTraceTable->pCallbacks[idx] = &NotImplementedRoutine;
 				break;
 			case 2:
 				pTraceTable->pCallbacks[idx] = &StpCallbackEntry; 
@@ -323,6 +349,11 @@ Return Value:
     if (LogInitialized) {
         LogIrpShutdownHandler();
         LogInitialized = false;
+    }
+
+    if (TlsLookasideInitialized) {
+        ExDeleteLookasideListEx(&TLSLookasideList);
+        TlsLookasideInitialized = false;
     }
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -451,6 +482,15 @@ Return Value:
         LogInitialized = true;
     }
    
+    if (!TlsLookasideInitialized) {
+        Status = ExInitializeLookasideListEx(&TLSLookasideList, NULL, NULL, PagedPool, EX_LOOKASIDE_LIST_EX_FLAGS_RAISE_ON_FAIL, sizeof(TLSData), DRIVER_POOL_TAG, NULL);
+        if (!NT_SUCCESS(Status)) {
+            DBGPRINT("Failed to initialize TLS lookaside list. Status = 0x%08x\r\n", Status);
+            goto exit;
+        }
+        TlsLookasideInitialized = true;
+    }
+
     switch (Ioctl)
     {
     case IOCTL_LOADDLL:

@@ -22,8 +22,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis = pApis;
     LOG_INFO("Plugin Initializing...\r\n");
 
-    g_Apis.pSetCallback("QueryInformationProcess", true, PROBE_IDS::IdQueryInformationProcess);
-    g_Apis.pSetCallback("QueryInformationProcess", false, PROBE_IDS::IdQueryInformationProcess);
+    g_Apis.pSetCallback("QueryInformationProcess", PROBE_IDS::IdQueryInformationProcess);
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -32,8 +31,7 @@ ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does 
 extern "C" __declspec(dllexport) void StpDeInitialize() {
     LOG_INFO("Plugin DeInitializing...\r\n");
 
-    g_Apis.pUnsetCallback("QueryInformationProcess", true);
-    g_Apis.pUnsetCallback("QueryInformationProcess", false);
+    g_Apis.pUnsetCallback("QueryInformationProcess");
    
     LOG_INFO("Plugin DeInitialized\r\n");
 }
