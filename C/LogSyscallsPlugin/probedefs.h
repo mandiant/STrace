@@ -1693,7 +1693,7 @@ const char* get_probe_name(PROBE_IDS probeId) {
     }
 }
 
-auto get_probe_argtypes(PROBE_IDS probeId) {
+constexpr auto get_probe_argtypes(PROBE_IDS probeId) {
     switch (probeId) {
     case PROBE_IDS::IdLockProductActivationKeys: return make_span(arg_types<tLockProductActivationKeys>::value.begin(), arg_types<tLockProductActivationKeys>::value.end());
     case PROBE_IDS::IdWaitHighEventPair: return make_span(arg_types<tWaitHighEventPair>::value.begin(), arg_types<tWaitHighEventPair>::value.end());

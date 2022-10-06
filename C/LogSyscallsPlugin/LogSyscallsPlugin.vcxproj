@@ -166,7 +166,7 @@
       <ShowIncludes>false</ShowIncludes>
       <EnableModules>
       </EnableModules>
-      <AdditionalOptions>/analyze:stacksize 1500 /we6262</AdditionalOptions>
+      <AdditionalOptions>/analyze:stacksize 1000 /we6262</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -201,7 +201,7 @@
       <ShowIncludes>false</ShowIncludes>
       <EnableModules>
       </EnableModules>
-      <AdditionalOptions>/analyze:stacksize 1500 /we6262</AdditionalOptions>
+      <AdditionalOptions>/analyze:stacksize 1000 /we6262</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

@@ -58,7 +58,7 @@ struct arg_types<R(*)(A...)> {
 
 // msvc doesn't implement a constructor for std::span from iterators. This does that...
 template<typename It>
-constexpr auto make_span(It begin, It end) {
+consteval auto make_span(It begin, It end) {
     return std::span<std::remove_reference_t<std::iter_reference_t<It>>>(&(*begin), std::distance(begin, end));
 }
 

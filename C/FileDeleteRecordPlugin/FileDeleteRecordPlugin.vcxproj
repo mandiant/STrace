@@ -152,7 +152,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <ShowIncludes>false</ShowIncludes>
-      <AdditionalOptions>/analyze:stacksize 1500 /we6262</AdditionalOptions>
+      <AdditionalOptions>/analyze:stacksize 1000 /we6262</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -184,7 +184,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <ShowIncludes>false</ShowIncludes>
-      <AdditionalOptions>/analyze:stacksize 1500 /we6262</AdditionalOptions>
+      <AdditionalOptions>/analyze:stacksize 1000 /we6262</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
