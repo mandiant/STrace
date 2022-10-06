@@ -606,7 +606,7 @@ namespace magic_enum {
         inline constexpr auto max_v = (count_v<E> > 0) ? static_cast<U>(values_v<E>.back()) : U{ 0 };
 
         template <typename E, std::size_t... I>
-        constexpr auto names(std::index_sequence<I...>) noexcept {
+        consteval auto names(std::index_sequence<I...>) noexcept {
             static_assert(is_enum_v<E>, "magic_enum::detail::names requires enum type.");
 
             return std::array<string_view, sizeof...(I)>{ {enum_name_v<E, values_v<E>[I]>...}};
