@@ -76,7 +76,8 @@ extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
 ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
 
 enum TLS_SLOTS : uint8_t {
-    PROCESS_DBG_PORT_INFO = 0
+    PROCESS_INFO_CLASS = 0,
+    PROCESS_INFO_DATA = 1
 };
 
 /**
@@ -96,9 +97,12 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     case PROBE_IDS::IdQueryInformationProcess: {
         auto processInfoClass = ctx.read_argument(1);
         auto processInfo = ctx.read_argument(2);
-        if (processInfoClass == 7) {
+
+        g_Apis.pSetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS);
+        g_Apis.pSetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA);
+
+        if (processInfoClass == (uint64_t)PROCESSINFOCLASS::ProcessDebugPort) {
             LOG_INFO("[!] %s ANTI_DBG QueryInformationProcess ProcessDebugPort\r\n", callerinfo.processName);
-            g_Apis.pSetTlsData(processInfo, TLS_SLOTS::PROCESS_DBG_PORT_INFO);
             PrintStackTrace(callerinfo);
         }
         break;
@@ -108,6 +112,17 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     }
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackEntry, tStpCallbackEntryPlugin, "StpCallbackEntry does not match the interface type");
+
+/*
+This is a funny little trick. In a switch case, if you define a new scope with locals they all
+get lifted to the parent scope which can allocate lots of stack space even if that case isn't
+always taken. The fix for that is to not define locals in a switch case, and call a function instead.
+But that's annoying and breaks cleanly putting the code in the switch body. Instead, we can define a lambda.
+
+The lambda acts like we made a function, which we ensure is true by forcing noinline. This way stack space is only
+allocated if the case is taken. This basically is a technique to declare a global function, while within a function.
+*/
+#define NEW_SCOPE(code) [&]() DECLSPEC_NOINLINE { code }()
 
 /**
 pService: Pointer to system service from SSDT
@@ -120,10 +135,24 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo & callerinfo) {
     switch ((PROBE_IDS)probeId) {
     case PROBE_IDS::IdQueryInformationProcess: {
+        uint64_t processInfoClass = 0;
         uint64_t processInfo = 0;
-        if (g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_DBG_PORT_INFO) && processInfo) {
-            ULONG newValue = 0;
-            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA) && processInfo) {
+            switch (processInfoClass) {
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
+                NEW_SCOPE(
+                    ULONG newValue = 0;
+                    g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
+                NEW_SCOPE(
+                    DWORD newValue = 1;
+                    g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            }
+            
         }
         break;
     }

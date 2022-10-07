@@ -216,7 +216,6 @@ typedef struct _FILE_NAME_INFORMATION {
     WCHAR FileName[1];
 } FILE_NAME_INFORMATION, * PFILE_NAME_INFORMATION;
 
-
 typedef enum _OBJECT_INFORMATION_CLASS {
     ObjectBasicInformation = 0,
     ObjectNameInformation = 1,
