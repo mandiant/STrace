@@ -118,8 +118,6 @@ pArgSize: Length of argument array, usually hard coded to 1
 pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 **/
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo & callerinfo) {
-    //LOG_INFO("OrigRet: %X", ctx.read_return_value());
-    //ctx.write_return_value(-3);
     switch ((PROBE_IDS)probeId) {
     case PROBE_IDS::IdQueryInformationProcess: {
         uint64_t processInfo = 0;
