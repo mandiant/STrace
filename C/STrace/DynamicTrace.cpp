@@ -50,3 +50,55 @@ extern "C" __declspec(dllexport) __declspec(noinline) BOOLEAN TraceAccessMemory(
 	}
 	return TRUE;
 }
+
+bool SetTLSData(uint64_t value, uint8_t slot) {
+	if (slot >= MAX_TLS_SLOT) {
+		__debugbreak();
+		return false;
+	}
+
+	if (!TraceSystemApi) {
+		__debugbreak();
+		return false;
+	}
+
+	TLSData* pData = TraceSystemApi->getRawTLSData();
+	if (!pData) {
+		return false;
+	}
+
+	__try {
+		pData->arbitraryData[slot] = value;
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+
+	}
+	return false;
+}
+
+bool GetTLSData(uint64_t& value, uint8_t slot) {
+	if (slot >= MAX_TLS_SLOT) {
+		__debugbreak();
+		return false;
+	}
+
+	if (!TraceSystemApi) {
+		__debugbreak();
+		return false;
+	}
+
+	TLSData* pData = TraceSystemApi->getRawTLSData();
+	if (!pData) {
+		return false;
+	}
+
+	__try {
+		value = pData->arbitraryData[slot];
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+
+	}
+	return false;
+}

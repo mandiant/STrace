@@ -15,9 +15,10 @@ in an exit probe. There's some boolean flags that guard which things can occur w
 these early in the callbacks, we need to check if we called OS apis, so that we can skip those frames for 
 callstack tracing.
 */
+static const uint8_t MAX_TLS_SLOT = 64;
 struct TLSData {
 	uint64_t calldepth;
-	uint64_t arbitraryData[64];
+	uint64_t arbitraryData[MAX_TLS_SLOT];
 };
 
 static bool TlsLookasideInitialized = false;
@@ -70,6 +71,20 @@ struct TraceApi
 
 	__forceinline bool isCallFromInsideProbe() {
 		return getTlsDataCalldepth() > 1;
+	}
+	
+	__forceinline TLSData* getRawTLSData() {
+		PKTHREAD pThread = KeGetCurrentThread();
+
+		// this is always one based on what i've seen. This might also be 'is tracing tls supported' rather than array size.
+		// unless the value ever is something other than 1 in a future ntoskrnl we can't know
+		if (kthread_tracingprivatedata_arraysize <= 0) {
+			__debugbreak();
+			return nullptr;
+		}
+
+		uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
+		return (TLSData*)pTlsArray[0];
 	}
 private:
 	// helper routines I created based off of dtrace's internals, that use fields within this apis
@@ -138,20 +153,6 @@ private:
 		}
 		return value;
 	}
-
-	DECLSPEC_NOINLINE TLSData* getRawTLSData() {
-		PKTHREAD pThread = KeGetCurrentThread();
-
-		// this is always one based on what i've seen. This might also be 'is tracing tls supported' rather than array size.
-		// unless the value ever is something other than 1 in a future ntoskrnl we can't know
-		if (kthread_tracingprivatedata_arraysize <= 0) {
-			__debugbreak();
-			return nullptr;
-		}
-
-		uint64_t* pTlsArray = (uint64_t*)(((char*)pThread) + kthread_tracingprivatedata_offset);
-		return (TLSData*)pTlsArray[0];
-	}
 };
 
 struct TraceCallbacks
@@ -179,3 +180,7 @@ doesn't have to do anything important, but the kernel uses it to determine the b
 extern "C" __declspec(dllexport) BOOLEAN TraceAccessMemory(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
 extern TraceApi* TraceSystemApi;
+
+// These must be free functions
+bool SetTLSData(uint64_t value, uint8_t slot);
+bool GetTLSData(uint64_t& value, uint8_t slot);

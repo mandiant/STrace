@@ -75,6 +75,10 @@ extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
 
+enum TLS_SLOTS : uint8_t {
+    PROCESS_DBG_PORT_INFO = 0
+};
+
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
@@ -91,8 +95,10 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     switch ((PROBE_IDS)probeId) {
     case PROBE_IDS::IdQueryInformationProcess: {
         auto processInfoClass = ctx.read_argument(1);
+        auto processInfo = ctx.read_argument(2);
         if (processInfoClass == 7) {
             LOG_INFO("[!] %s ANTI_DBG QueryInformationProcess ProcessDebugPort\r\n", callerinfo.processName);
+            g_Apis.pSetTlsData(processInfo, TLS_SLOTS::PROCESS_DBG_PORT_INFO);
             PrintStackTrace(callerinfo);
         }
         break;
@@ -100,7 +106,6 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     default:
         break;
     }
-
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackEntry, tStpCallbackEntryPlugin, "StpCallbackEntry does not match the interface type");
 
@@ -115,6 +120,18 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo & callerinfo) {
     //LOG_INFO("OrigRet: %X", ctx.read_return_value());
     //ctx.write_return_value(-3);
+    switch ((PROBE_IDS)probeId) {
+    case PROBE_IDS::IdQueryInformationProcess: {
+        uint64_t processInfo = 0;
+        if (g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_DBG_PORT_INFO) && processInfo) {
+            ULONG newValue = 0;
+            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackReturn, tStpCallbackReturnPlugin, "StpCallbackEntry does not match the interface type");
 

@@ -53,9 +53,13 @@ public:
 };
 
 typedef LONG NTSTATUS;
+typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
+typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
+typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
+typedef NTSTATUS(*tUnSetEtwCallbackApi)();
 typedef PVOID(NTAPI* tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
@@ -63,9 +67,13 @@ class PluginApis {
 public:
 	PluginApis() = default;
 
+	tSetTlsData pSetTlsData;
+	tGetTlsData pGetTlsData;
 	tLogPrintApi pLogPrint;
 	tSetCallbackApi pSetCallback;
 	tUnSetCallbackApi pUnsetCallback;
+	tSetEtwCallbackApi pEtwSetCallback;
+	tUnSetEtwCallbackApi pEtwUnSetCallback;
 	tMmGetSystemRoutineAddress pGetSystemRoutineAddress;
 	tTraceAccessMemory pTraceAccessMemory;
 };
