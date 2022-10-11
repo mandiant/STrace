@@ -68,10 +68,7 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    if (strcmp(callerinfo.processName, "a.exe") == 0) {
-        return true;
-    }
-    return false;
+    return true;
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
 
@@ -149,6 +146,18 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 NEW_SCOPE(
                     DWORD newValue = 1;
                     g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
+                NEW_SCOPE(
+                    HANDLE old = 0;
+                    g_Apis.pTraceAccessMemory(&old, processInfo, sizeof(old), 1, true);
+
+                    if (ctx.read_return_value() == STATUS_SUCCESS && old) {
+                        HANDLE newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                        ctx.write_return_value(STATUS_PORT_NOT_SET);
+                    }
                 );
                 break;
             }
