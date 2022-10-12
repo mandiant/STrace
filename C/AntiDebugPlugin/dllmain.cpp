@@ -168,7 +168,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
                     NEW_SCOPE(
                         ULONG newValue = 0;
-                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
                     );
                     break;
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
