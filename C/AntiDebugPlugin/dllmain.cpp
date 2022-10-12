@@ -68,47 +68,18 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    return true;
+    if (strcmp(callerinfo.processName, "test.exe") == 0) {
+        return true;
+    }
+    return false;
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
 
 enum TLS_SLOTS : uint8_t {
     PROCESS_INFO_CLASS = 0,
-    PROCESS_INFO_DATA = 1
+    PROCESS_INFO_DATA = 1,
+    PROCESS_INFO_DATA_LEN = 2
 };
-
-/**
-pService: Pointer to system service from SSDT
-probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
-paramCount: Number of arguments this system service uses
-pArgs: Argument array, usually x64 fastcall registers rcx, rdx, r8, r9
-pArgSize: Length of argument array, usually hard coded to 4
-pStackArgs: Pointer to stack area containing the rest of the arguments, if any
-**/
-extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo)
-{
-    // !!BEWARE OF HOW MUCH STACK SPACE IS USED!!
-    char sprintf_tmp_buf[256] = { 0 };
-
-    switch ((PROBE_IDS)probeId) {
-    case PROBE_IDS::IdQueryInformationProcess: {
-        auto processInfoClass = ctx.read_argument(1);
-        auto processInfo = ctx.read_argument(2);
-
-        g_Apis.pSetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS);
-        g_Apis.pSetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA);
-
-        if (processInfoClass == (uint64_t)PROCESSINFOCLASS::ProcessDebugPort) {
-            LOG_INFO("[!] %s ANTI_DBG QueryInformationProcess ProcessDebugPort\r\n", callerinfo.processName);
-            PrintStackTrace(callerinfo);
-        }
-        break;
-    }
-    default:
-        break;
-    }
-}
-ASSERT_INTERFACE_IMPLEMENTED(StpCallbackEntry, tStpCallbackEntryPlugin, "StpCallbackEntry does not match the interface type");
 
 /*
 This is a funny little trick. In a switch case, if you define a new scope with locals they all
@@ -124,6 +95,47 @@ allocated if the case is taken. This basically is a technique to declare a globa
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
+paramCount: Number of arguments this system service uses
+pArgs: Argument array, usually x64 fastcall registers rcx, rdx, r8, r9
+pArgSize: Length of argument array, usually hard coded to 4
+pStackArgs: Pointer to stack area containing the rest of the arguments, if any
+**/
+extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo)
+{
+    // !!BEWARE OF HOW MUCH STACK SPACE IS USED!!
+    char sprintf_tmp_buf[256] = { 0 };
+
+    switch ((PROBE_IDS)probeId) {
+    case PROBE_IDS::IdQueryInformationProcess:
+        NEW_SCOPE(
+            auto processInfoClass = ctx.read_argument(1);
+            auto processInfo = ctx.read_argument(2);
+            auto processInfoLen = ctx.read_argument(4);
+
+            g_Apis.pSetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS);
+            g_Apis.pSetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA);
+            g_Apis.pSetTlsData(processInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN);
+
+            if (processInfoClass == (uint64_t)PROCESSINFOCLASS::ProcessDebugPort) {
+                LOG_INFO("[!] %s ANTI_DBG QueryInformationProcess ProcessDebugPort\r\n", callerinfo.processName);
+                PrintStackTrace(callerinfo);
+            }
+        );
+        break;
+    case PROBE_IDS::IdGetContextThread:
+        NEW_SCOPE(
+            auto contextThread = (PCONTEXT)ctx.read_argument(1);
+        );
+        break;
+    default:
+        break;
+    }
+}
+ASSERT_INTERFACE_IMPLEMENTED(StpCallbackEntry, tStpCallbackEntryPlugin, "StpCallbackEntry does not match the interface type");
+
+/**
+pService: Pointer to system service from SSDT
+probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
 paramCount: Number of arguments this system service uses, usually hard coded to 1
 pArgs: Argument array, usually a single entry that holds return value
 pArgSize: Length of argument array, usually hard coded to 1
@@ -132,36 +144,43 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo & callerinfo) {
     switch ((PROBE_IDS)probeId) {
     case PROBE_IDS::IdQueryInformationProcess: {
+        // Internally, the kernel sets ProcessInfo first THEN sets ProcessInfoLength. We have to mirror this. So we bypass processInfo values first, then set length.
+        // The anti-debug technique used sets both ProcessInfo and ProcessInfo length to be teh same pointer, so if you JUST bypass ProcessInfo then the Length value gets 
+        // overwritten too since they're the same buffer. Fixing the Length value means, we have to write it too, which is why we bother backing it up.
         uint64_t processInfoClass = 0;
         uint64_t processInfo = 0;
-        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA) && processInfo) {
-            switch (processInfoClass) {
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
-                NEW_SCOPE(
-                    ULONG newValue = 0;
-                    g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                );
-                break;
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
-                NEW_SCOPE(
-                    DWORD newValue = 1;
-                    g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                );
-                break;
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
-                NEW_SCOPE(
-                    HANDLE old = 0;
-                    g_Apis.pTraceAccessMemory(&old, processInfo, sizeof(old), 1, true);
-
-                    if (ctx.read_return_value() == STATUS_SUCCESS && old) {
-                        HANDLE newValue = 0;
-                        g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                        ctx.write_return_value(STATUS_PORT_NOT_SET);
+        uint64_t processInfoLen = 0;
+        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(processInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN) && g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA) && processInfo) {
+            // backup length
+            uint32_t origProcessInfoLen = 0;
+            if (NT_SUCCESS(g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, true))) {
+                    switch (processInfoClass) {
+                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
+                        NEW_SCOPE(
+                            ULONG newValue = 0;
+                            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                        );
+                        break;
+                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
+                        NEW_SCOPE(
+                            DWORD newValue = 1;
+                            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                        );
+                        break;
+                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
+                        NEW_SCOPE(
+                            if (ctx.read_return_value() == STATUS_SUCCESS) {
+                                HANDLE newValue = 0;
+                                g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
+                                ctx.write_return_value(STATUS_PORT_NOT_SET);
+                            }
+                        );
+                        break;
                     }
-                );
-                break;
+
+                // reset length
+                g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, false);
             }
-            
         }
         break;
     }

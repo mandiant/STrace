@@ -5,18 +5,31 @@ TraceApi* TraceSystemApi;
 extern "C" __declspec(dllexport) __declspec(noinline) BOOLEAN TraceAccessMemory(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead)
 {
 	// Write entire memory routines in __try __except to generate relevant unwind information. 
+	char* source = (char*)UnsafeAddress;
+	char* dest = (char*)SafeAddress;
 
+	// Swap if write
+	if (!DoRead) {
+		char* tmp = source;
+		source = dest;
+		dest = tmp;
+	}
+
+	// for user space accesses, we should probe to page in and check access violations.
 	__try {
-		char* source = (char*)UnsafeAddress;
-		char* dest = (char*)SafeAddress;
-
-		// Swap if write
-		if (!DoRead) {
-			char* tmp = source;
-			source = dest;
-			dest = tmp;
+		if ((ULONG64)source < MmUserProbeAddress) {
+			ProbeForRead(source, NumberOfBytes, 1);
 		}
 
+		if ((ULONG64)dest < MmUserProbeAddress) {
+			ProbeForWrite(source, NumberOfBytes, 1);
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return FALSE;
+	}
+
+	__try {
 		// It's done this way so that all read/write logic is contained within this function (rather than call memcpy)
 		// We use a chunk-size so that faulting accesses across pages can be easily controlled by the user
 		// Note: This routine can be implemented in any way as long as there are no calls within the body.
@@ -46,7 +59,7 @@ extern "C" __declspec(dllexport) __declspec(noinline) BOOLEAN TraceAccessMemory(
 			dest += ChunkSize;
 		}
 	}__except(EXCEPTION_EXECUTE_HANDLER) {
-		
+		return FALSE;
 	}
 	return TRUE;
 }
