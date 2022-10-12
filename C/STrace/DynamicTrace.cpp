@@ -22,7 +22,7 @@ extern "C" __declspec(dllexport) __declspec(noinline) BOOLEAN TraceAccessMemory(
 		}
 
 		if ((ULONG64)dest < MmUserProbeAddress) {
-			ProbeForWrite(source, NumberOfBytes, 1);
+			ProbeForWrite(dest, NumberOfBytes, 1);
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {

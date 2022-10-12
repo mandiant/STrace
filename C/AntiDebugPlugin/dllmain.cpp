@@ -148,38 +148,43 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         // The anti-debug technique used sets both ProcessInfo and ProcessInfo length to be teh same pointer, so if you JUST bypass ProcessInfo then the Length value gets 
         // overwritten too since they're the same buffer. Fixing the Length value means, we have to write it too, which is why we bother backing it up.
         uint64_t processInfoClass = 0;
-        uint64_t processInfo = 0;
-        uint64_t processInfoLen = 0;
-        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(processInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN) && g_Apis.pGetTlsData(processInfo, TLS_SLOTS::PROCESS_INFO_DATA) && processInfo) {
-            // backup length
+        uint64_t pProcessInfo = 0;
+        uint64_t pProcessInfoLen = 0;
+        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
+            // backup length (it can be null, in which case, don't read it)
             uint32_t origProcessInfoLen = 0;
-            if (NT_SUCCESS(g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, true))) {
-                    switch (processInfoClass) {
-                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
-                        NEW_SCOPE(
-                            ULONG newValue = 0;
-                            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                        );
-                        break;
-                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
-                        NEW_SCOPE(
-                            DWORD newValue = 1;
-                            g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                        );
-                        break;
-                    case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
-                        NEW_SCOPE(
-                            if (ctx.read_return_value() == STATUS_SUCCESS) {
-                                HANDLE newValue = 0;
-                                g_Apis.pTraceAccessMemory(&newValue, processInfo, sizeof(newValue), 1, false);
-                                ctx.write_return_value(STATUS_PORT_NOT_SET);
-                            }
-                        );
-                        break;
-                    }
+            if (pProcessInfoLen) {
+                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, true);
+            }
 
-                // reset length
-                g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, false);
+            switch (processInfoClass) {
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
+                NEW_SCOPE(
+                    __debugbreak();
+                    ULONG newValue = 0;
+                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
+                NEW_SCOPE(
+                    DWORD newValue = 1;
+                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
+                NEW_SCOPE(
+                    if (ctx.read_return_value() == STATUS_SUCCESS) {
+                        HANDLE newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                        ctx.write_return_value(STATUS_PORT_NOT_SET);
+                    }
+                );
+                break;
+            }
+
+            // reset length
+            if (pProcessInfoLen) {
+                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, false);
             }
         }
         break;
