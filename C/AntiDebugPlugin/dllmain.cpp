@@ -105,6 +105,8 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 **/
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, MachineState& ctx, CallerInfo& callerinfo)
 {
+    // Ported from: https://github.com/mrexodia/TitanHide
+    // Credits: Duncan Ogilvie (mrexodia), Matthijs Lavrijsen (Matti)
     switch ((PROBE_IDS)probeId) {
     case PROBE_IDS::IdQueryInformationProcess:
         NEW_SCOPE(
