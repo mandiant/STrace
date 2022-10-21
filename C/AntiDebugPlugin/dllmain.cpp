@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <intrin.h>
 
-
 #include "Interface.h"
 #include "crt.h"
 #include "utils.h"
@@ -10,8 +9,11 @@
 #include "string.h"
 #include "magic_enum.hpp"
 
+
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
+bool g_isHideFromDebugger;
+
 
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
@@ -23,6 +25,9 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     LOG_INFO("Plugin Initializing...\r\n");
 
     g_Apis.pSetCallback("QueryInformationProcess", PROBE_IDS::IdQueryInformationProcess);
+    g_Apis.pSetCallback("QueryInformationThread", PROBE_IDS::IdQueryInformationThread);
+    g_Apis.pSetCallback("SetInformationThread", PROBE_IDS::IdSetInformationThread);
+
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -32,6 +37,9 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     LOG_INFO("Plugin DeInitializing...\r\n");
 
     g_Apis.pUnsetCallback("QueryInformationProcess");
+    g_Apis.pUnsetCallback("QueryInformationThread");
+    g_Apis.pUnsetCallback("SetInformationThread");
+
    
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -66,6 +74,81 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
     const auto MANUALLY_INITIATED_CRASH = 0xE2;
     DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
 }
+/*
+ Receives the offset to CrossThreadFlags bitmask (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/crossthreadflags.htm) 
+ within ETHREAD (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm), which varies between Windows versions. 
+ That said, since STrace is supported only as of Windows 10 19041, effectively we'll have to use only one of two offsets (depending on if the CPU is a 
+ 32 bit or 64 bit one). This function serves for future updates, in case the offset to the CrossThreadFlags field in ETHREAD changes. 
+*/
+int GetCrossThreadFlagsOffset()
+{
+    RTL_OSVERSIONINFOW verInfo; 
+
+    if (RtlGetVersion(&verInfo) == STATUS_SUCCESS)
+    {
+#if _WIN64
+        switch (verInfo.dwBuildNumber)
+        {
+            case 10240: // NT10.0
+            case 10586: // 1511
+                return 0x6BC;
+            case 14393: // 1607
+                return 0x6C0;
+            case 15063: // 1703
+                return 0x6C0;                
+            case 16299: // 1709
+            case 17134: // 1803
+            case 17763: // 1809
+                return 0x6D0;
+            case 18362: // 1903 
+                return 0x6E0;
+            case 18663: // 1909
+            case 19041: // 2004
+            case 19042: // 20H2
+            case 19043: // 21H1
+            case 19044: // 21H2
+            case 19045: // 22H2
+            case 22000: 
+            case 22621:
+            default:
+                return 0x510;
+        }
+
+#else
+        switch (verInfo.dwBuildNumber)
+        {
+        case 10240: // NT10.0
+        case 10586: // 1511
+            return 0x3C8;
+        case 14393: // 1607
+            return 0x3C4;
+        case 15063: // 1703
+        case 16299: // 1709
+        case 17134: // 1803
+        case 17763: // 1809
+            return 0x3CC;
+        case 18362: // 1903 
+            return 0x6E0;
+        case 18663: // 1909
+        case 19041: // 2004
+        case 19042: // 20H2
+        case 19043: // 21H1
+        case 19044: // 21H2
+        case 19045: // 22H2
+        case 22000:
+        case 22621:
+        default:
+            return 0x2FC;
+        }
+        
+#endif
+    
+    }
+    else
+        return -1;
+    
+}
+
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
     if (strcmp(callerinfo.processName, "test.exe") == 0) {
@@ -81,7 +164,10 @@ enum TLS_SLOTS : uint8_t {
     PROCESS_INFO_DATA_LEN = 2,
 
     CONTEXT_THREAD_DATA = 3,
-    WOW64_CONTEXT_THREAD_DATA = 4
+    WOW64_CONTEXT_THREAD_DATA = 4,
+    THREAD_HANDLE = 5,
+    QUERY_THREAD_HIDE_FROM_DEBUGGER = 6,
+    THREAD_HIDE_FROM_DEBUGGER_DATA = 7
 };
 
 /*
@@ -122,6 +208,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     case PROBE_IDS::IdGetContextThread:
         NEW_SCOPE(
             auto pContextThreadData = (PCONTEXT)ctx.read_argument(1);
+
             g_Apis.pSetTlsData((uint64_t)pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA);
         );
         break;
@@ -130,9 +217,38 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             auto threadInfoClass = ctx.read_argument(1);
             auto pThreadInfoData = ctx.read_argument(2);
             auto threadInfoLen = ctx.read_argument(3);
+
             if (threadInfoClass == (uint64_t)THREADINFOCLASS::ThreadWow64Context && threadInfoLen == sizeof(WOW64_CONTEXT)) {
                 g_Apis.pSetTlsData((uint64_t)pThreadInfoData, TLS_SLOTS::WOW64_CONTEXT_THREAD_DATA);
             }
+            else if (threadInfoClass == (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger)
+            {
+                g_Apis.pSetTlsData(true, TLS_SLOTS::QUERY_THREAD_HIDE_FROM_DEBUGGER);
+                g_Apis.pSetTlsData((uint64_t)pThreadInfoData, TLS_SLOTS::THREAD_HIDE_FROM_DEBUGGER_DATA);
+            }
+            else
+            {
+                g_Apis.pSetTlsData(false, TLS_SLOTS::QUERY_THREAD_HIDE_FROM_DEBUGGER);
+            }
+        );
+        break;
+    case PROBE_IDS::IdSetInformationThread:
+        NEW_SCOPE(
+            auto threadHandle = ctx.read_argument(0);
+            auto threadInfoClass = ctx.read_argument(1);
+            auto pThreadInfoData = ctx.read_argument(2);
+            auto threadInfoLen = ctx.read_argument(3);
+
+
+            if (threadInfoClass == (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger && !threadInfoLen && threadHandle)
+            {
+                g_Apis.pSetTlsData(threadHandle, TLS_SLOTS::THREAD_HANDLE);
+            }
+            /*
+            else if (threadInfoClass == (uint64_t)THREADINFOCLASS::ThreadWow64Context && threadInfoLen == sizeof(WOW64_CONTEXT))
+            {
+            // TODO
+            }*/
         );
         break;
     default:
@@ -159,6 +275,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t processInfoClass = 0;
             uint64_t pProcessInfo = 0;
             uint64_t pProcessInfoLen = 0;
+
             if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
                 // backup length (it can be null, in which case, don't read it)
                 uint32_t origProcessInfoLen = 0;
@@ -198,6 +315,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
     case PROBE_IDS::IdGetContextThread:
         NEW_SCOPE(
             uint64_t pContextThreadData = {0};
+            
             if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
                 uint64_t contextBase = 0;
                 if (g_Apis.pTraceAccessMemory(&contextBase, pContextThreadData, sizeof(contextBase), 1, true)) {
@@ -220,6 +338,8 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
     case PROBE_IDS::IdQueryInformationThread:
         NEW_SCOPE(
             uint64_t pWow64ContextThreadData = { 0 };
+            uint64_t isRequestThreadHideFromDebugger;
+
             if (g_Apis.pGetTlsData(pWow64ContextThreadData, TLS_SLOTS::WOW64_CONTEXT_THREAD_DATA)) {
                 uint64_t contextBase = 0;
                 if (g_Apis.pTraceAccessMemory(&contextBase, pWow64ContextThreadData, sizeof(contextBase), 1, true)) {
@@ -232,6 +352,41 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                     g_Apis.pTraceAccessMemory(&newValue, contextBase + offsetof(WOW64_CONTEXT, Dr7), sizeof(newValue), 1, false);
                 }
             }
+            else if (g_Apis.pGetTlsData(isRequestThreadHideFromDebugger, TLS_SLOTS::QUERY_THREAD_HIDE_FROM_DEBUGGER) && isRequestThreadHideFromDebugger && g_isHideFromDebugger)
+            {
+                uint64_t threadInfo; 
+                bool newValue = true;
+
+                g_Apis.pGetTlsData(threadInfo, TLS_SLOTS::THREAD_HIDE_FROM_DEBUGGER_DATA);
+                g_Apis.pTraceAccessMemory(&newValue, threadInfo, sizeof(newValue), 1, false);
+            }
+        );
+        break;
+    case PROBE_IDS::IdSetInformationThread:
+        NEW_SCOPE(
+            ULONG crossThreadFlagsOffset = 0; 
+            PVOID pETHREAD = { 0 };
+            ULONG crossThreadFlags = 0;
+            uint64_t threadHandle = 0;
+
+            if (g_Apis.pGetTlsData(threadHandle, TLS_SLOTS::THREAD_HANDLE) && threadHandle)
+            {
+                crossThreadFlagsOffset = GetCrossThreadFlagsOffset();
+                ObReferenceObjectByHandle((HANDLE)threadHandle, THREAD_ALL_ACCESS, NULL, ExGetPreviousMode(), (PVOID*)&pETHREAD, NULL);
+                if (pETHREAD)
+                {
+                    g_Apis.pTraceAccessMemory(&crossThreadFlags, (ULONG_PTR)pETHREAD + crossThreadFlagsOffset, sizeof(crossThreadFlags), 1, true);
+
+                    if (crossThreadFlags & 0x4)
+                    {
+                        g_isHideFromDebugger = true;
+                        _InterlockedAnd((volatile unsigned long long*)(&crossThreadFlags), (unsigned long long)(0xFFFFFFFF - 4));
+                        g_Apis.pTraceAccessMemory(&crossThreadFlags, (ULONG_PTR)pETHREAD + crossThreadFlagsOffset, sizeof(crossThreadFlags), 1, false);
+                        ObDereferenceObject(pETHREAD);
+                    }
+                }
+            }
+                           
         );
         break;
     default:

@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include "Interface.h"
 
+
 // Structures
 typedef struct _IO_STATUS_BLOCK {
 	union {
@@ -23,6 +24,18 @@ typedef struct _OBJECT_ATTRIBUTES {
 	PVOID SecurityQualityOfService;  // Points to type SECURITY_QUALITY_OF_SERVICE
 } OBJECT_ATTRIBUTES;
 typedef OBJECT_ATTRIBUTES* POBJECT_ATTRIBUTES;
+
+typedef struct _OBJECT_HANDLE_INFORMATION
+{
+    ULONG HandleAttributes;
+    ULONG GrantedAccess;
+} OBJECT_HANDLE_INFORMATION, * POBJECT_HANDLE_INFORMATION;
+
+typedef struct _OBJECT_TYPE* POBJECT_TYPE;
+
+
+typedef CCHAR KPROCESSOR_MODE;
+
 
 #define FILE_SUPERSEDE                  0x00000000
 #define FILE_OPEN                       0x00000001
@@ -237,6 +250,7 @@ extern "C" __declspec(dllimport) void NTAPI ExFreePoolWithTag(PVOID P, ULONG Tag
 extern "C" __declspec(dllimport) NTSTATUS NTAPI RtlAppendUnicodeStringToString(PUNICODE_STRING Destination, PCUNICODE_STRING Source);
 extern "C" __declspec(dllimport) NTSTATUS NTAPI RtlAppendUnicodeToString(PUNICODE_STRING Destination, PCWSTR Source);
 extern "C" __declspec(dllimport) void NTAPI RtlCopyUnicodeString(PUNICODE_STRING  DestinationString, PCUNICODE_STRING SourceString);
+extern "C" __declspec(dllimport) NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOW);
 
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes);
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwOpenFile(
@@ -306,6 +320,14 @@ extern "C" __declspec(dllimport) NTSTATUS NTAPI NtQueryInformationFile(HANDLE Fi
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwQueryObject(HANDLE Handle,OBJECT_INFORMATION_CLASS ObjectInformationClass,PVOID ObjectInformation,ULONG ObjectInformationLength,PULONG ReturnLength);
 
 extern "C" __declspec(dllimport) int __cdecl _snprintf(char*, size_t, const char*, ...);
+
+extern "C" __declspec(dllimport) NTSTATUS ObReferenceObjectByHandle(HANDLE Handle, ACCESS_MASK DesiredAccess, POBJECT_TYPE ObjectType, KPROCESSOR_MODE AccessMode, PVOID * Object, POBJECT_HANDLE_INFORMATION HandleInformation);
+extern "C" __declspec(dllimport) void ObDereferenceObject(PVOID Object);
+
+extern "C" __declspec(dllimport) KPROCESSOR_MODE ExGetPreviousMode();
+
+extern "C" __declspec(dllimport) ULONG DbgPrint(PCSTR Format);
+
 
 enum class LiveKernelDumpFlags : ULONG {
     KernelPages = 0,
