@@ -26,6 +26,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
 
     g_Apis.pSetCallback("QueryInformationProcess", PROBE_IDS::IdQueryInformationProcess);
     g_Apis.pSetCallback("QueryInformationThread", PROBE_IDS::IdQueryInformationThread);
+    g_Apis.pSetCallback("GetContextThread", PROBE_IDS::IdGetContextThread);
     g_Apis.pSetCallback("SetInformationThread", PROBE_IDS::IdSetInformationThread);
 
 
@@ -38,9 +39,9 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
 
     g_Apis.pUnsetCallback("QueryInformationProcess");
     g_Apis.pUnsetCallback("QueryInformationThread");
+    g_Apis.pUnsetCallback("GetContextThread");
     g_Apis.pUnsetCallback("SetInformationThread");
 
-   
     LOG_INFO("Plugin DeInitialized\r\n");
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpDeInitialize, tStpDeInitialize, "StpDeInitialize does not match the interface type");
