@@ -16,7 +16,7 @@ public:
 
 	uint64_t read_argument(const uint32_t idx)
 	{
-		if (idx > paramCount || regArgsSize > paramCount)
+		if (idx > paramCount)
 			return 0;
 
 		if (idx >= regArgsSize) {
