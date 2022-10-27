@@ -117,7 +117,7 @@ int GetCrossThreadFlagsOffset()
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    if (strcmp(callerinfo.processName, "test.exe") == 0) {
+    if (strcmp(callerinfo.processName, "al-khaser.exe") == 0) {
         return true;
     }
     return false;
@@ -237,14 +237,14 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 switch (processInfoClass) {
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
                     NEW_SCOPE(
-                        ULONG newValue = 0;
-                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                        DWORD64 newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
                     );
                     break;
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
                     NEW_SCOPE(
                         DWORD newValue = 1;
-                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
                     );
                     break;
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
@@ -292,7 +292,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                     NEW_SCOPE(
                         // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
                         BOOLEAN newValue = TRUE;
-                    g_Apis.pTraceAccessMemory(&newValue, pThreadInfo, sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo, sizeof(newValue), 1, false);
                     );
                     break;
                 }
