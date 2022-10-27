@@ -328,8 +328,20 @@ extern "C" __declspec(dllimport) PEPROCESS NTAPI PsGetCurrentProcess();
 
 extern "C" __declspec(dllimport) PVOID NTAPI PsGetProcessDebugPort(PEPROCESS Process);
 
-typedef void* PKEVENT;
-extern "C" __declspec(dllimport) PKEVENT NTAPI IoCreateNotificationEvent(PUNICODE_STRING EventName, PHANDLE EventHandle);
+typedef enum _EVENT_TYPE {
+    NotificationEvent,
+    SynchronizationEvent
+} EVENT_TYPE;
+
+extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwCreateEvent(
+    PHANDLE            EventHandle,
+    ACCESS_MASK        DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    EVENT_TYPE         EventType,
+    BOOLEAN            InitialState
+);
+
+extern "C" __declspec(dllimport) ULONG NTAPI RtlRandomEx(PULONG Seed);
 
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ObCloseHandle(HANDLE Handle,KPROCESSOR_MODE PreviousMode);
 

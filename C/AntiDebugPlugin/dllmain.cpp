@@ -249,16 +249,37 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 }
                 g_Apis.pSetTlsData(true, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL);
 
-                // replace handle that real ntclose will use either way
-                UNICODE_STRING fakeEventName = { 0 };
-                RtlInitUnicodeString(&fakeEventName, L"\\BaseNamedObjects\\STrace_FK_CLOSE");
+                // build a random event name
+                wchar_t alphabet[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+                uint64_t alphabetSize = ARRAYSIZE(alphabet) - 1;
 
+                wchar_t eventBaseName[] = L"\\BaseNamedObjects\\STrace_FK_CLOSE";
+                uint64_t eventBaseNameSize = wcslen(eventBaseName);
+                
+                ULONG seed = callerinfo.processId;
+                wchar_t eventName[ARRAYSIZE(eventBaseName) + 20] = {0};
+                memcpy(eventName, eventBaseName, eventBaseNameSize * sizeof(wchar_t));
+                eventName[eventBaseNameSize] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 1] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 2] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 3] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 4] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 5] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 6] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                eventName[eventBaseNameSize + 7] = alphabet[RtlRandomEx(&seed) % alphabetSize];
                 if (Handle == (HANDLE)0x99999999ULL) {
                     __debugbreak();
                 }
+                // replace handle that real ntclose will use either way
+                UNICODE_STRING fakeEventName = { 0 };
+                RtlInitUnicodeString(&fakeEventName, eventName);
 
                 HANDLE fakeHandle = 0;
-                if (IoCreateNotificationEvent(&fakeEventName, &fakeHandle) != NULL) {
+                OBJECT_ATTRIBUTES attrs = { 0 };
+                InitializeObjectAttributes(&attrs, &fakeEventName, OBJ_INHERIT, NULL, NULL);
+
+                // open new event to replace it, will be immediately closed
+                if (NT_SUCCESS(ZwCreateEvent(&fakeHandle, EVENT_ALL_ACCESS, &attrs, EVENT_TYPE::NotificationEvent, FALSE))) {
                     ctx.write_argument(0, fakeHandle);
                 }
             }
