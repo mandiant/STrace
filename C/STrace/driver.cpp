@@ -585,7 +585,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DeviceControl;
     DriverObject->DriverUnload                         = DeviceUnload;
     DriverObject->DeviceObject = g_DeviceObj;
-
+    
     //
     // Create a link in the Win32 namespace.
     //
@@ -597,6 +597,6 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
         IoDeleteDevice(DriverObject->DeviceObject);
         return Status;
     }
-
+    
     return STATUS_SUCCESS;
 }

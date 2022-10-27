@@ -29,7 +29,7 @@ public:
 
 	template<typename T>
 	void write_argument(const uint32_t idx, T value) {
-		if (idx > paramCount || regArgsSize > paramCount)
+		if (idx > paramCount)
 			return;
 
 		if (idx >= regArgsSize) {

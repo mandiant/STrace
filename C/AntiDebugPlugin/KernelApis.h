@@ -315,6 +315,26 @@ extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwCreateFile(
     ULONG EaLength
     );
 
+extern "C" __declspec(dllimport) NTSTATUS NTAPI ObQueryObjectAuditingByHandle(
+    HANDLE   Handle,
+    PBOOLEAN GenerateOnClose
+);
+
+#define STATUS_HANDLE_NOT_CLOSABLE 0xC0000235L
+#define OBJ_PROTECT_CLOSE 0x00000001L
+
+typedef void* PEPROCESS;
+extern "C" __declspec(dllimport) PEPROCESS NTAPI PsGetCurrentProcess();
+
+extern "C" __declspec(dllimport) PVOID NTAPI PsGetProcessDebugPort(PEPROCESS Process);
+
+typedef void* PKEVENT;
+extern "C" __declspec(dllimport) PKEVENT NTAPI IoCreateNotificationEvent(PUNICODE_STRING EventName, PHANDLE EventHandle);
+
+extern "C" __declspec(dllimport) NTSTATUS NTAPI ObCloseHandle(HANDLE Handle,KPROCESSOR_MODE PreviousMode);
+
+extern "C" __declspec(dllimport) VOID NTAPI RtlInitUnicodeString(PUNICODE_STRING DestinationString, PCWSTR SourceString);
+
 extern "C" __declspec(dllimport) NTSTATUS NTAPI NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
 
 extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwQueryObject(HANDLE Handle,OBJECT_INFORMATION_CLASS ObjectInformationClass,PVOID ObjectInformation,ULONG ObjectInformationLength,PULONG ReturnLength);

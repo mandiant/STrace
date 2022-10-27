@@ -26,6 +26,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("QueryInformationThread", PROBE_IDS::IdQueryInformationThread);
     g_Apis.pSetCallback("GetContextThread", PROBE_IDS::IdGetContextThread);
     g_Apis.pSetCallback("SetInformationThread", PROBE_IDS::IdSetInformationThread);
+    g_Apis.pSetCallback("Close", PROBE_IDS::IdClose);
 
 
     LOG_INFO("Plugin Initialized\r\n");
@@ -39,6 +40,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("QueryInformationThread");
     g_Apis.pUnsetCallback("GetContextThread");
     g_Apis.pUnsetCallback("SetInformationThread");
+    g_Apis.pUnsetCallback("Close");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -73,6 +75,7 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
     const auto MANUALLY_INITIATED_CRASH = 0xE2;
     DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
 }
+
 /*
  Receives the offset to CrossThreadFlags bitmask (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/crossthreadflags.htm) 
  within ETHREAD (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm), which varies between Windows versions. 
@@ -134,7 +137,10 @@ enum TLS_SLOTS : uint8_t {
     THREAD_INFO_HANDLE = 4,
     THREAD_INFO_CLASS = 5,
     THREAD_INFO_DATA = 6,
-    THREAD_INFO_DATA_LEN = 7
+    THREAD_INFO_DATA_LEN = 7,
+
+    CLOSE_NEW_RETVAL = 8,
+    CLOSE_SHOULD_WRITE_RETVAL = 9
 };
 
 /*
@@ -200,6 +206,62 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             g_Apis.pSetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS);
             g_Apis.pSetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA);
             g_Apis.pSetTlsData(ThreadInfoLen, TLS_SLOTS::THREAD_INFO_DATA_LEN);
+        );
+        break;
+    case PROBE_IDS::IdClose:
+        /*When under a debugger, NtClose generates an exception for usermode apps if an invalid OR pseudohandle is closed.
+        We cannot cancel calls in the way inline hooks can, so we replace the handle with a valid one in these cases instead.*/
+        NEW_SCOPE(
+            HANDLE Handle = (HANDLE)ctx.read_argument(0);
+            auto PreviousMode = ExGetPreviousMode();
+
+            BOOLEAN AuditOnClose;
+            NTSTATUS ObStatus = ObQueryObjectAuditingByHandle(Handle, &AuditOnClose);
+
+            // only invalid handles must we replace
+            if (ObStatus == STATUS_INVALID_HANDLE) {
+                BOOLEAN BeingDebugged = PsGetProcessDebugPort(PsGetCurrentProcess()) != nullptr;
+
+                OBJECT_HANDLE_INFORMATION HandleInfo = { 0 };
+                if (BeingDebugged)
+                {
+                    // Get handle info so we can check if the handle has the ProtectFromClose bit set
+                    PVOID Object = nullptr;
+                    ObStatus = ObReferenceObjectByHandle(Handle,
+                        0,
+                        nullptr,
+                        PreviousMode,
+                        &Object,
+                        &HandleInfo);
+
+                    if (Object != nullptr) {
+                        ObDereferenceObject(Object);
+                    }
+                }
+
+                // Set new status appropriately
+                if (BeingDebugged && NT_SUCCESS(ObStatus) &&
+                    (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
+                {
+                    g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, TLS_SLOTS::CLOSE_NEW_RETVAL);
+                } else {
+                    g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), TLS_SLOTS::CLOSE_NEW_RETVAL);
+                }
+                g_Apis.pSetTlsData(true, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL);
+
+                // replace handle that real ntclose will use either way
+                UNICODE_STRING fakeEventName = { 0 };
+                RtlInitUnicodeString(&fakeEventName, L"\\BaseNamedObjects\\STrace_FK_CLOSE");
+
+                if (Handle == (HANDLE)0x99999999ULL) {
+                    __debugbreak();
+                }
+
+                HANDLE fakeHandle = 0;
+                if (IoCreateNotificationEvent(&fakeEventName, &fakeHandle) != NULL) {
+                    ctx.write_argument(0, fakeHandle);
+                }
+            }
         );
         break;
     default:
@@ -356,6 +418,15 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchFromRip), sizeof(newValue), 1, false);
                 g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionToRip), sizeof(newValue), 1, false);
                 g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionFromRip), sizeof(newValue), 1, false);
+            }
+        );
+        break;
+    case PROBE_IDS::IdClose:
+        NEW_SCOPE(
+            uint64_t newRetVal = 0;
+            uint64_t shouldWriteRetVal = 0;
+            if (g_Apis.pGetTlsData(newRetVal, TLS_SLOTS::CLOSE_NEW_RETVAL) && g_Apis.pGetTlsData(shouldWriteRetVal, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL) && shouldWriteRetVal) {
+                ctx.write_return_value(newRetVal);
             }
         );
         break;
