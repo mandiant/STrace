@@ -137,10 +137,7 @@ enum TLS_SLOTS : uint8_t {
     THREAD_INFO_HANDLE = 4,
     THREAD_INFO_CLASS = 5,
     THREAD_INFO_DATA = 6,
-    THREAD_INFO_DATA_LEN = 7,
-
-    CLOSE_NEW_RETVAL = 8,
-    CLOSE_SHOULD_WRITE_RETVAL = 9
+    THREAD_INFO_DATA_LEN = 7
 };
 
 /*
@@ -243,75 +240,10 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 if (BeingDebugged && NT_SUCCESS(ObStatus) &&
                     (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
                 {
-                    g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, TLS_SLOTS::CLOSE_NEW_RETVAL);
-                }
-                else {
-                    g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), TLS_SLOTS::CLOSE_NEW_RETVAL);
-                }
-                g_Apis.pSetTlsData(true, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL);
-
-                // build a random event name
-                wchar_t alphabet[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-                uint64_t alphabetSize = ARRAYSIZE(alphabet) - 1;
-
-                wchar_t eventBaseName[] = L"\\BaseNamedObjects\\STrace_FK_CLOSE";
-                uint64_t eventBaseNameSize = wcslen(eventBaseName);
-
-                SIZE_T strMemSize = sizeof(UNICODE_STRING) + eventBaseNameSize + 20;
-                char* pUserMemStr = NULL;
-                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMemStr, NULL, &strMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
-                    //g_Apis.pTraceAccessMemory(&attrs, (ULONG_PTR)pUserMemAttrs, sizeof(OBJECT_ATTRIBUTES), 1, false);
-
-                    ULONG seed = callerinfo.processId;
-                    wchar_t eventName[ARRAYSIZE(eventBaseName) + 20] = { 0 };
-                    memcpy(eventName, eventBaseName, eventBaseNameSize * sizeof(wchar_t));
-
-                    wchar_t* pRawString = (wchar_t*)(pUserMemStr + sizeof(UNICODE_STRING));
-                    g_Apis.pTraceAccessMemory(eventBaseName, (ULONG_PTR)pRawString, eventBaseNameSize * sizeof(wchar_t), 1, false);
-
-                    pRawString[eventBaseNameSize] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 1] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 2] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 3] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 4] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 5] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 6] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                    pRawString[eventBaseNameSize + 7] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-
-                    USHORT len = wcslen(pRawString) * sizeof(wchar_t);
-                    g_Apis.pTraceAccessMemory(&len, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, Length), sizeof(USHORT), 1, false);
-
-                    USHORT maxLen = len + 2;
-                    g_Apis.pTraceAccessMemory(&maxLen, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, MaximumLength), sizeof(USHORT), 1, false);
-
-                    uint64_t RawStrAddr = (uint64_t)pRawString;
-                    g_Apis.pTraceAccessMemory(&RawStrAddr, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, Buffer), sizeof(void*), 1, false);
-                }
-
-                OBJECT_ATTRIBUTES attrs = { 0 };
-                InitializeObjectAttributes(&attrs, (UNICODE_STRING*)pUserMemStr, OBJ_INHERIT, NULL, NULL);
-
-                SIZE_T attrMemSize = sizeof(OBJECT_ATTRIBUTES);
-                char* pUserMemAttrs = NULL;
-                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMemAttrs, NULL, &attrMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
-                    g_Apis.pTraceAccessMemory(&attrs, (ULONG_PTR)pUserMemAttrs, sizeof(OBJECT_ATTRIBUTES), 1, false);
-                }
-
-                // handle must point at usermode memory for the usermode previousmode
-                SIZE_T handleMemSize = sizeof(HANDLE);
-                char* pUserMem = NULL;
-                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMem, NULL, &handleMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
-                    // open new event to replace it, will be immediately closed
-                    // Use NT so that PreviousMode is read and a usermode handle is created
-                    if (NT_SUCCESS(NtCreateEvent((PHANDLE)pUserMem, EVENT_ALL_ACCESS, (OBJECT_ATTRIBUTES*)pUserMemAttrs, EVENT_TYPE::NotificationEvent, FALSE))) {
-                        HANDLE fakeHandle = 0;
-                        if (g_Apis.pTraceAccessMemory(&fakeHandle, (ULONG_PTR)pUserMem, sizeof(fakeHandle), 1, true)) {
-                            if (Handle == (HANDLE)0x99999999ULL) {
-                                __debugbreak();
-                            }
-                            ctx.write_argument(0, (uint64_t)fakeHandle);
-                        }
-                    }
+                    
+                } else {
+                    LOG_INFO("NtClose Anti-Dbg potentially in use, cannot bypass this technique automatically!\n");
+                    PrintStackTrace(callerinfo);
                 }
             }
         );
@@ -474,13 +406,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         );
         break;
     case PROBE_IDS::IdClose:
-        NEW_SCOPE(
-            uint64_t newRetVal = 0;
-            uint64_t shouldWriteRetVal = 0;
-            if (g_Apis.pGetTlsData(newRetVal, TLS_SLOTS::CLOSE_NEW_RETVAL) && g_Apis.pGetTlsData(shouldWriteRetVal, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL) && shouldWriteRetVal) {
-                ctx.write_return_value(newRetVal);
-            }
-        );
+
         break;
     default:
         break;
