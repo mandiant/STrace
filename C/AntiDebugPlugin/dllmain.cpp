@@ -244,7 +244,8 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                     (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
                 {
                     g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, TLS_SLOTS::CLOSE_NEW_RETVAL);
-                } else {
+                }
+                else {
                     g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), TLS_SLOTS::CLOSE_NEW_RETVAL);
                 }
                 g_Apis.pSetTlsData(true, TLS_SLOTS::CLOSE_SHOULD_WRITE_RETVAL);
@@ -255,32 +256,62 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 
                 wchar_t eventBaseName[] = L"\\BaseNamedObjects\\STrace_FK_CLOSE";
                 uint64_t eventBaseNameSize = wcslen(eventBaseName);
-                
-                ULONG seed = callerinfo.processId;
-                wchar_t eventName[ARRAYSIZE(eventBaseName) + 20] = {0};
-                memcpy(eventName, eventBaseName, eventBaseNameSize * sizeof(wchar_t));
-                eventName[eventBaseNameSize] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 1] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 2] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 3] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 4] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 5] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 6] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                eventName[eventBaseNameSize + 7] = alphabet[RtlRandomEx(&seed) % alphabetSize];
-                if (Handle == (HANDLE)0x99999999ULL) {
-                    __debugbreak();
+
+                SIZE_T strMemSize = sizeof(UNICODE_STRING) + eventBaseNameSize + 20;
+                char* pUserMemStr = NULL;
+                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMemStr, NULL, &strMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
+                    //g_Apis.pTraceAccessMemory(&attrs, (ULONG_PTR)pUserMemAttrs, sizeof(OBJECT_ATTRIBUTES), 1, false);
+
+                    ULONG seed = callerinfo.processId;
+                    wchar_t eventName[ARRAYSIZE(eventBaseName) + 20] = { 0 };
+                    memcpy(eventName, eventBaseName, eventBaseNameSize * sizeof(wchar_t));
+
+                    wchar_t* pRawString = (wchar_t*)(pUserMemStr + sizeof(UNICODE_STRING));
+                    g_Apis.pTraceAccessMemory(eventBaseName, (ULONG_PTR)pRawString, eventBaseNameSize * sizeof(wchar_t), 1, false);
+
+                    pRawString[eventBaseNameSize] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 1] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 2] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 3] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 4] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 5] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 6] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+                    pRawString[eventBaseNameSize + 7] = alphabet[RtlRandomEx(&seed) % alphabetSize];
+
+                    USHORT len = wcslen(pRawString) * sizeof(wchar_t);
+                    g_Apis.pTraceAccessMemory(&len, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, Length), sizeof(USHORT), 1, false);
+
+                    USHORT maxLen = len + 2;
+                    g_Apis.pTraceAccessMemory(&maxLen, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, MaximumLength), sizeof(USHORT), 1, false);
+
+                    uint64_t RawStrAddr = (uint64_t)pRawString;
+                    g_Apis.pTraceAccessMemory(&RawStrAddr, (ULONG_PTR)pUserMemStr + offsetof(UNICODE_STRING, Buffer), sizeof(void*), 1, false);
                 }
-                // replace handle that real ntclose will use either way
-                UNICODE_STRING fakeEventName = { 0 };
-                RtlInitUnicodeString(&fakeEventName, eventName);
 
-                HANDLE fakeHandle = 0;
                 OBJECT_ATTRIBUTES attrs = { 0 };
-                InitializeObjectAttributes(&attrs, &fakeEventName, OBJ_INHERIT, NULL, NULL);
+                InitializeObjectAttributes(&attrs, (UNICODE_STRING*)pUserMemStr, OBJ_INHERIT, NULL, NULL);
 
-                // open new event to replace it, will be immediately closed
-                if (NT_SUCCESS(ZwCreateEvent(&fakeHandle, EVENT_ALL_ACCESS, &attrs, EVENT_TYPE::NotificationEvent, FALSE))) {
-                    ctx.write_argument(0, fakeHandle);
+                SIZE_T attrMemSize = sizeof(OBJECT_ATTRIBUTES);
+                char* pUserMemAttrs = NULL;
+                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMemAttrs, NULL, &attrMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
+                    g_Apis.pTraceAccessMemory(&attrs, (ULONG_PTR)pUserMemAttrs, sizeof(OBJECT_ATTRIBUTES), 1, false);
+                }
+
+                // handle must point at usermode memory for the usermode previousmode
+                SIZE_T handleMemSize = sizeof(HANDLE);
+                char* pUserMem = NULL;
+                if (NT_SUCCESS(ZwAllocateVirtualMemory((HANDLE)-1, (PVOID*)&pUserMem, NULL, &handleMemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
+                    // open new event to replace it, will be immediately closed
+                    // Use NT so that PreviousMode is read and a usermode handle is created
+                    if (NT_SUCCESS(NtCreateEvent((PHANDLE)pUserMem, EVENT_ALL_ACCESS, (OBJECT_ATTRIBUTES*)pUserMemAttrs, EVENT_TYPE::NotificationEvent, FALSE))) {
+                        HANDLE fakeHandle = 0;
+                        if (g_Apis.pTraceAccessMemory(&fakeHandle, (ULONG_PTR)pUserMem, sizeof(fakeHandle), 1, true)) {
+                            if (Handle == (HANDLE)0x99999999ULL) {
+                                __debugbreak();
+                            }
+                            ctx.write_argument(0, (uint64_t)fakeHandle);
+                        }
+                    }
                 }
             }
         );

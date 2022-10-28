@@ -333,13 +333,24 @@ typedef enum _EVENT_TYPE {
     SynchronizationEvent
 } EVENT_TYPE;
 
-extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwCreateEvent(
+extern "C" __declspec(dllimport) NTSTATUS NTAPI NtCreateEvent(
     PHANDLE            EventHandle,
     ACCESS_MASK        DesiredAccess,
     POBJECT_ATTRIBUTES ObjectAttributes,
     EVENT_TYPE         EventType,
     BOOLEAN            InitialState
 );
+
+extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwAllocateVirtualMemory(
+    HANDLE ProcessHandle,
+    PVOID* BaseAddress,
+    ULONG_PTR ZeroBits,
+    PSIZE_T RegionSize,
+    ULONG AllocationType,
+    ULONG Protect
+);
+
+extern "C" __declspec(dllimport) NTSTATUS NtClose(HANDLE handle);
 
 extern "C" __declspec(dllimport) ULONG NTAPI RtlRandomEx(PULONG Seed);
 

@@ -592,7 +592,7 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
     RtlInitUnicodeString(&DosDevicesLinkName, DOS_DEVICES_LINK_NAME);
 
     Status = IoCreateSymbolicLink(&DosDevicesLinkName, &NtDeviceName);
-
+    
     if (!NT_SUCCESS(Status)) {
         IoDeleteDevice(DriverObject->DeviceObject);
         return Status;
