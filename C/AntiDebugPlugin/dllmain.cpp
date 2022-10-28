@@ -151,6 +151,10 @@ allocated if the case is taken. This basically is a technique to declare a globa
 */
 #define NEW_SCOPE(code) [&]() DECLSPEC_NOINLINE { code }()
 
+DECLSPEC_NOINLINE void noop() {
+    volatile uint64_t noop = 0x1337;
+}
+
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
@@ -242,8 +246,8 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 {
                     
                 } else {
-                    LOG_INFO("NtClose Anti-Dbg potentially in use, cannot bypass this technique automatically!\n");
-                    PrintStackTrace(callerinfo);
+                    // The handle is invalid and would throw. Do nothing!
+                    ctx.redirect_syscall((uint64_t)&noop);
                 }
             }
         );

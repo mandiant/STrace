@@ -40,6 +40,11 @@ public:
 		}
 	}
 
+	void redirect_syscall(uint64_t pFn) {
+		// The syscall pointer is stored just after the args
+		pRegArgs[4] = pFn;
+	}
+
 	uint64_t read_return_value() {
 		return pRegArgs[0];
 	}
