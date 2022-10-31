@@ -76,49 +76,6 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
     DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
 }
 
-/*
- Receives the offset to CrossThreadFlags bitmask (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/crossthreadflags.htm) 
- within ETHREAD (https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm), which varies between Windows versions. 
- That said, since STrace is supported only as of Windows 10 19041, effectively we'll have to use only one of the offsets.
- This function serves for future updates, in case the offset to the CrossThreadFlags field in ETHREAD changes. 
-*/
-int GetCrossThreadFlagsOffset()
-{
-    RTL_OSVERSIONINFOW verInfo; 
-
-    if (RtlGetVersion(&verInfo) == STATUS_SUCCESS)
-    {
-        switch (verInfo.dwBuildNumber)
-        {
-            case 10240: // NT10.0
-            case 10586: // 1511
-                return 0x6BC;
-            case 14393: // 1607
-                return 0x6C0;
-            case 15063: // 1703
-                return 0x6C0;                
-            case 16299: // 1709
-            case 17134: // 1803
-            case 17763: // 1809
-                return 0x6D0;
-            case 18362: // 1903 
-                return 0x6E0;
-            case 18663: // 1909
-            case 19041: // 2004
-            case 19042: // 20H2
-            case 19043: // 21H1
-            case 19044: // 21H2
-            case 19045: // 22H2
-            case 22000: 
-            case 22621:
-            default:
-                return 0x510; // this is what's usually chosen
-        }
-    }
-
-    return -1;
-}
-
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
     if (strcmp(callerinfo.processName, "al-khaser.exe") == 0) {
         return true;
@@ -137,7 +94,10 @@ enum TLS_SLOTS : uint8_t {
     THREAD_INFO_HANDLE = 4,
     THREAD_INFO_CLASS = 5,
     THREAD_INFO_DATA = 6,
-    THREAD_INFO_DATA_LEN = 7
+    THREAD_INFO_DATA_LEN = 7,
+
+    CLOSE_RETVAL = 8,
+    CLOSE_OVERWRITE_RETVAL = 9,
 };
 
 /*
@@ -151,8 +111,61 @@ allocated if the case is taken. This basically is a technique to declare a globa
 */
 #define NEW_SCOPE(code) [&]() DECLSPEC_NOINLINE { code }()
 
+// no change to retval
 DECLSPEC_NOINLINE void noop() {
     volatile uint64_t noop = 0x1337;
+}
+
+// Do same checks as original, but otherwise nothing except say ok
+DECLSPEC_NOINLINE NTSTATUS NoopNtSetInformationThread(
+    HANDLE ThreadHandle,
+    THREADINFOCLASS ThreadInformationClass,
+    PVOID ThreadInformation,
+    ULONG ThreadInformationLength
+) {
+    auto PreviousMode = ExGetPreviousMode();
+    ULONG ProbeAlignment = 0;
+
+    if (PreviousMode != KernelMode) {
+        switch (ThreadInformationClass) {
+        case THREADINFOCLASS::ThreadHideFromDebugger:
+            ProbeAlignment = sizeof(ULONG);
+        }
+
+        // mimick ProbeForRead
+        if (ThreadInformationLength) {
+            KIRQL oldIrql = KfRaiseIrql(DTRACE_IRQL);
+            uint64_t tmp = 0;
+            if (!g_Apis.pTraceAccessMemory(&tmp, (ULONG_PTR)ThreadInformation, 1, 1, true)) {
+                KeLowerIrql(oldIrql);
+                return STATUS_ACCESS_VIOLATION;
+            }
+            KeLowerIrql(oldIrql);
+        }
+    }
+
+    switch (ThreadInformationClass) {
+    case THREADINFOCLASS::ThreadHideFromDebugger:
+        if (ThreadInformationLength != 0) {
+            return STATUS_INFO_LENGTH_MISMATCH;
+        }
+
+        // check if handle is valid
+        HANDLE Thread = 0;
+        auto status = ObReferenceObjectByHandle(ThreadHandle,
+            THREAD_SET_INFORMATION,
+            NULL,
+            PreviousMode,
+            &Thread,
+            NULL);
+
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+        break;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 /**
@@ -198,15 +211,14 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         break;
     case PROBE_IDS::IdSetInformationThread:
         NEW_SCOPE(
-            auto threadHandle = ctx.read_argument(0);
             auto threadInfoClass = ctx.read_argument(1);
-            auto pThreadInfo = ctx.read_argument(2);
-            auto ThreadInfoLen = ctx.read_argument(3);
 
-            g_Apis.pSetTlsData(threadHandle, TLS_SLOTS::THREAD_INFO_HANDLE);
-            g_Apis.pSetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS);
-            g_Apis.pSetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA);
-            g_Apis.pSetTlsData(ThreadInfoLen, TLS_SLOTS::THREAD_INFO_DATA_LEN);
+            switch (threadInfoClass) {
+            case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
+                // just do nothing, pretend the call happened ok
+                ctx.redirect_syscall((uint64_t)&NoopNtSetInformationThread);
+                break;
+            }
         );
         break;
     case PROBE_IDS::IdClose:
@@ -219,12 +231,12 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             BOOLEAN AuditOnClose;
             NTSTATUS ObStatus = ObQueryObjectAuditingByHandle(Handle, &AuditOnClose);
 
-            // only invalid handles must we replace
-            if (ObStatus == STATUS_INVALID_HANDLE) {
+            if (ObStatus != STATUS_INVALID_HANDLE) {
+                // handle isn't invalid, check some additional properties
                 BOOLEAN BeingDebugged = PsGetProcessDebugPort(PsGetCurrentProcess()) != nullptr;
-
+                BOOLEAN GlobalFlgExceptions = RtlGetNtGlobalFlags() & FLG_ENABLE_CLOSE_EXCEPTIONS;
                 OBJECT_HANDLE_INFORMATION HandleInfo = { 0 };
-                if (BeingDebugged)
+                if (BeingDebugged || GlobalFlgExceptions)
                 {
                     // Get handle info so we can check if the handle has the ProtectFromClose bit set
                     PVOID Object = nullptr;
@@ -240,15 +252,22 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                     }
                 }
 
-                // Set new status appropriately
-                if (BeingDebugged && NT_SUCCESS(ObStatus) &&
-                    (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
+                // If debugged, or handle not closeable, avoid exception and give noncloseable back
+                if ((BeingDebugged || GlobalFlgExceptions) && NT_SUCCESS(ObStatus) && (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
                 {
-                    
-                } else {
-                    // The handle is invalid and would throw. Do nothing!
                     ctx.redirect_syscall((uint64_t)&noop);
+                    g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, CLOSE_RETVAL);
+                    g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
+                } else {
+                    // really close, it's ok won't raise
+                    ctx.redirect_syscall((uint64_t)&noop);
+                    g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), CLOSE_RETVAL);
+                    g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
                 }
+            } else {
+                ctx.redirect_syscall((uint64_t)&noop);
+                g_Apis.pSetTlsData(STATUS_INVALID_HANDLE, CLOSE_RETVAL);
+                g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
             }
         );
         break;
@@ -354,42 +373,6 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             }
         );
         break;
-    case PROBE_IDS::IdSetInformationThread:
-        NEW_SCOPE(
-            uint64_t threadInfoClass = 0;
-           
-            if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS)) {
-                switch (threadInfoClass) {
-                case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
-                    NEW_SCOPE(
-                        ULONG crossThreadFlagsOffset = 0;
-                        PVOID pETHREAD = { 0 };
-                        ULONG crossThreadFlags = 0;
-                        uint64_t threadHandle = 0;
-
-                        if (g_Apis.pGetTlsData(threadHandle, TLS_SLOTS::THREAD_INFO_HANDLE) && threadHandle)
-                        {
-                            // get Ethread of thread info being set and reset the value
-                            crossThreadFlagsOffset = GetCrossThreadFlagsOffset();
-                            ObReferenceObjectByHandle((HANDLE)threadHandle, THREAD_ALL_ACCESS, NULL, ExGetPreviousMode(), (PVOID*)&pETHREAD, NULL);
-                            if (pETHREAD)
-                            {
-                                g_Apis.pTraceAccessMemory(&crossThreadFlags, (ULONG_PTR)pETHREAD + crossThreadFlagsOffset, sizeof(crossThreadFlags), 1, true);
-
-                                if (crossThreadFlags & 0x4)
-                                {
-                                    _InterlockedAnd((volatile unsigned long long*)(&crossThreadFlags), (unsigned long long)(0xFFFFFFFF - 4));
-                                    g_Apis.pTraceAccessMemory(&crossThreadFlags, (ULONG_PTR)pETHREAD + crossThreadFlagsOffset, sizeof(crossThreadFlags), 1, false);
-                                    ObDereferenceObject(pETHREAD);
-                                }
-                            }
-                        }
-                    );
-                    break;
-                }
-            }
-        );
-        break;
     case PROBE_IDS::IdGetContextThread:
         NEW_SCOPE(
             uint64_t pContextThreadData = {0};
@@ -410,7 +393,13 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         );
         break;
     case PROBE_IDS::IdClose:
-
+        NEW_SCOPE(
+            uint64_t ovrwRetVal = { 0 };
+            uint64_t newRetVal = { 0 };
+            if (g_Apis.pGetTlsData(ovrwRetVal, TLS_SLOTS::CLOSE_OVERWRITE_RETVAL) && g_Apis.pGetTlsData(newRetVal, TLS_SLOTS::CLOSE_RETVAL) && ovrwRetVal) {
+                ctx.write_return_value(newRetVal);
+            }
+        );
         break;
     default:
         break;

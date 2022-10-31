@@ -156,7 +156,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         CallerInfo callerInfo;
         if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
             callerInfo.CaptureStackTrace(calledChildren ? 1 : 0);
-
+    
             MachineState ctx = { 0 };
             ctx.pRegArgs = pArgs;
             ctx.regArgsSize = pArgSize;
@@ -216,7 +216,7 @@ extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHe
     if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
         return;
     }
-
+    
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe() && pluginData.isLoaded() && pluginData.pDtEtwpEventCallback) {
         pluginData.pDtEtwpEventCallback(pEventHeader, a, pProviderGuid, b);

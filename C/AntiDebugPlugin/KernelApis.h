@@ -350,6 +350,11 @@ extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwAllocateVirtualMemory(
     ULONG Protect
 );
 
+static const uint64_t DTRACE_IRQL = 15;
+typedef UCHAR KIRQL;
+extern "C" __declspec(dllimport) KIRQL KfRaiseIrql(KIRQL newIrql);
+extern "C" __declspec(dllimport) void KeLowerIrql(KIRQL newIrql);
+
 extern "C" __declspec(dllimport) NTSTATUS NtClose(HANDLE handle);
 
 extern "C" __declspec(dllimport) ULONG NTAPI RtlRandomEx(PULONG Seed);
@@ -371,7 +376,9 @@ extern "C" __declspec(dllimport) KPROCESSOR_MODE ExGetPreviousMode();
 
 extern "C" __declspec(dllimport) ULONG DbgPrint(PCSTR Format);
 
+extern "C" __declspec(dllimport) ULONG RtlGetNtGlobalFlags(VOID);
 
+#define FLG_ENABLE_CLOSE_EXCEPTIONS 0x00400000
 enum class LiveKernelDumpFlags : ULONG {
     KernelPages = 0,
     UserAndKernelPages = 1,
@@ -379,6 +386,12 @@ enum class LiveKernelDumpFlags : ULONG {
     HyperVAndKernelPages = 4,
     UserAndHyperVAndKernelPages = 5 // UserAndKernelPages & HyperVAndKernelPages
 };
+
+typedef enum _MODE {
+    KernelMode,
+    UserMode,
+    MaximumMode
+} MODE;
 
 // C:\Windows\LiveKernelReports OR path within HKLM\system\currentcontrolset\control\crashcontrol\livekernelreports
 // ComponentName: Name of folder created in report directory
