@@ -27,7 +27,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("GetContextThread", PROBE_IDS::IdGetContextThread);
     g_Apis.pSetCallback("SetInformationThread", PROBE_IDS::IdSetInformationThread);
     g_Apis.pSetCallback("Close", PROBE_IDS::IdClose);
-
+    g_Apis.pSetCallback("CreateThreadEx", PROBE_IDS::IdCreateThreadEx);
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -41,6 +41,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("GetContextThread");
     g_Apis.pUnsetCallback("SetInformationThread");
     g_Apis.pUnsetCallback("Close");
+    g_Apis.pUnsetCallback("CreateThreadEx");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
