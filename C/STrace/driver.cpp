@@ -395,7 +395,7 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
                 goto exit;
             }
         }
-
+        
         if (pluginData.pInitialize) {
             // The plugin must immediately copy this structure. It must be a local to avoid C++ static initializers, which are created if its a global
             PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory, &SetTLSData, &GetTLSData);

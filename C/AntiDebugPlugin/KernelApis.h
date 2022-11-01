@@ -350,6 +350,7 @@ extern "C" __declspec(dllimport) NTSTATUS NTAPI ZwAllocateVirtualMemory(
     ULONG Protect
 );
 
+#define THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER 0x00000004
 static const uint64_t DTRACE_IRQL = 15;
 typedef UCHAR KIRQL;
 extern "C" __declspec(dllimport) KIRQL KfRaiseIrql(KIRQL newIrql);

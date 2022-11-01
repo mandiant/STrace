@@ -272,6 +272,15 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             }
         );
         break;
+    case PROBE_IDS::IdCreateThreadEx:
+        NEW_SCOPE(
+            ULONG createFlags = ctx.read_argument(6);
+            if (createFlags & THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER != 0) {
+                createFlags &= ~THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER;
+                ctx.write_argument(6, createFlags);
+            }
+        );
+        break;
     default:
         break;
     }
