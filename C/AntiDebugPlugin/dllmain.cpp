@@ -28,6 +28,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("SetInformationThread", PROBE_IDS::IdSetInformationThread);
     g_Apis.pSetCallback("Close", PROBE_IDS::IdClose);
     g_Apis.pSetCallback("CreateThreadEx", PROBE_IDS::IdCreateThreadEx);
+    g_Apis.pSetCallback("QueryObject", PROBE_IDS::IdQueryObject);
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -42,6 +43,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("SetInformationThread");
     g_Apis.pUnsetCallback("Close");
     g_Apis.pUnsetCallback("CreateThreadEx");
+    g_Apis.pUnsetCallback("QueryObject");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -88,17 +90,21 @@ ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not ma
 enum TLS_SLOTS : uint8_t {
     PROCESS_INFO_CLASS = 0,
     PROCESS_INFO_DATA = 1,
-    PROCESS_INFO_DATA_LEN = 2,
+    PROCESS_INFO_RET_LEN = 2,
 
     CONTEXT_THREAD_DATA = 3,
 
     THREAD_INFO_HANDLE = 4,
     THREAD_INFO_CLASS = 5,
     THREAD_INFO_DATA = 6,
-    THREAD_INFO_DATA_LEN = 7,
+    THREAD_INFO_RET_LEN = 7,
 
     CLOSE_RETVAL = 8,
     CLOSE_OVERWRITE_RETVAL = 9,
+
+    OBJECT_INFO_CLASS = 10,
+    OBJECT_INFO_DATA = 11,
+    OBJECT_INFO_RET_LEN = 12
 };
 
 /*
@@ -190,7 +196,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 
             g_Apis.pSetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS);
             g_Apis.pSetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA);
-            g_Apis.pSetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN);
+            g_Apis.pSetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN);
         );
         break;
     case PROBE_IDS::IdGetContextThread:
@@ -203,11 +209,11 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         NEW_SCOPE(
             auto threadInfoClass = ctx.read_argument(1);
             auto pThreadInfo = ctx.read_argument(2);
-            auto pThreadInfoLen = ctx.read_argument(3);
+            auto pThreadInfoLen = ctx.read_argument(4);
 
             g_Apis.pSetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS);
             g_Apis.pSetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA);
-            g_Apis.pSetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_DATA_LEN);
+            g_Apis.pSetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN);
         );
         break;
     case PROBE_IDS::IdSetInformationThread:
@@ -281,6 +287,17 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             }
         );
         break;
+    case PROBE_IDS::IdQueryObject:
+        NEW_SCOPE(
+            auto objectInfoClass = ctx.read_argument(1);
+            auto objectInfoData = ctx.read_argument(2);
+            auto objectInfoLen = ctx.read_argument(4);
+
+            g_Apis.pSetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS);
+            g_Apis.pSetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA);
+            g_Apis.pSetTlsData(objectInfoLen, TLS_SLOTS::OBJECT_INFO_RET_LEN);
+        );
+        break;
     default:
         break;
     }
@@ -306,7 +323,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t pProcessInfo = 0;
             uint64_t pProcessInfoLen = 0;
 
-            if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_DATA_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
+            if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
                 // backup length (it can be null, in which case, don't read it)
                 uint32_t origProcessInfoLen = 0;
                 if (pProcessInfoLen) {
@@ -348,7 +365,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t pThreadInfo = 0;
             uint64_t pThreadInfoLen = 0;
 
-            if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_DATA_LEN) && g_Apis.pGetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA) && pThreadInfo) {
+            if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN) && g_Apis.pGetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA) && pThreadInfo) {
                 // backup length (it can be null, in which case, don't read it)
                 uint32_t origThreadInfoLen = 0;
                 if (pThreadInfoLen) {
@@ -408,6 +425,33 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t newRetVal = { 0 };
             if (g_Apis.pGetTlsData(ovrwRetVal, TLS_SLOTS::CLOSE_OVERWRITE_RETVAL) && g_Apis.pGetTlsData(newRetVal, TLS_SLOTS::CLOSE_RETVAL) && ovrwRetVal) {
                 ctx.write_return_value(newRetVal);
+            }
+        );
+        break;
+    case PROBE_IDS::IdQueryObject:
+        NEW_SCOPE(
+            uint64_t objectInfoClass = 0;
+            uint64_t objectInfoData = 0;
+            uint64_t objectInfoLen = 0;
+
+            NTSTATUS status = ctx.read_return_value();
+            if (NT_SUCCESS(status) && g_Apis.pGetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS) && g_Apis.pGetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA) && g_Apis.pGetTlsData(objectInfoLen, TLS_SLOTS::OBJECT_INFO_RET_LEN) && objectInfoData) {
+                /*
+                This isn't perfect. DebugObjects are always present in the output, so we can't remove them, but we can zero them.
+                Some things purposely create a debug object, then check if the count is zero, which detects anti-anti-dbg like this.
+                Need to hook NtCreateDebugObject, and increment by 1 for each call to that, before the handle is closed via NtClose. TODO
+                */
+                uint32_t origObjectInfoLen = 0;
+                if (objectInfoLen) {
+                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoLen, sizeof(origObjectInfoLen), 1, true);
+                }
+
+
+
+                // reset length
+                if (objectInfoLen) {
+                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoLen, sizeof(origObjectInfoLen), 1, false);
+                }
             }
         );
         break;
