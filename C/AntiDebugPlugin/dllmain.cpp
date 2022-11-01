@@ -320,103 +320,103 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         // overwritten too since they're the same buffer. Fixing the Length value means, we have to write it too, which is why we bother backing it up.
         NEW_SCOPE(
             uint64_t processInfoClass = 0;
-            uint64_t pProcessInfo = 0;
-            uint64_t pProcessInfoLen = 0;
+        uint64_t pProcessInfo = 0;
+        uint64_t pProcessInfoLen = 0;
 
-            if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
-                // backup length (it can be null, in which case, don't read it)
-                uint32_t origProcessInfoLen = 0;
-                if (pProcessInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, true);
-                }
-
-                switch (processInfoClass) {
-                case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
-                    NEW_SCOPE(
-                        DWORD64 newValue = 0;
-                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                    );
-                    break;
-                case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
-                    NEW_SCOPE(
-                        DWORD newValue = 1;
-                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                    );
-                    break;
-                case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
-                    if (ctx.read_return_value() == STATUS_SUCCESS) {
-                        HANDLE newValue = 0;
-                        g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                        ctx.write_return_value(STATUS_PORT_NOT_SET);
-                    }
-                    break;
-                }
-
-                // reset length
-                if (pProcessInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, false);
-                }
+        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
+            // backup length (it can be null, in which case, don't read it)
+            uint32_t origProcessInfoLen = 0;
+            if (pProcessInfoLen) {
+                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, true);
             }
+
+            switch (processInfoClass) {
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
+                NEW_SCOPE(
+                    DWORD64 newValue = 0;
+                g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
+                NEW_SCOPE(
+                    DWORD newValue = 1;
+                g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
+                if (ctx.read_return_value() == STATUS_SUCCESS) {
+                    HANDLE newValue = 0;
+                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
+                    ctx.write_return_value(STATUS_PORT_NOT_SET);
+                }
+                break;
+            }
+
+            // reset length
+            if (pProcessInfoLen) {
+                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, false);
+            }
+        }
         );
         break;
     case PROBE_IDS::IdQueryInformationThread:
         NEW_SCOPE(
             uint64_t threadInfoClass = 0;
-            uint64_t pThreadInfo = 0;
-            uint64_t pThreadInfoLen = 0;
+        uint64_t pThreadInfo = 0;
+        uint64_t pThreadInfoLen = 0;
 
-            if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN) && g_Apis.pGetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA) && pThreadInfo) {
-                // backup length (it can be null, in which case, don't read it)
-                uint32_t origThreadInfoLen = 0;
-                if (pThreadInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, true);
-                }
-
-                switch (threadInfoClass) {
-                case (uint64_t)THREADINFOCLASS::ThreadWow64Context:
-                    NEW_SCOPE(
-                        uint64_t newValue = 0;
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr0), sizeof(newValue), 1, false);
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr1), sizeof(newValue), 1, false);
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr2), sizeof(newValue), 1, false);
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr3), sizeof(newValue), 1, false);
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr6), sizeof(newValue), 1, false);
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr7), sizeof(newValue), 1, false);
-                    );
-                    break;
-                case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
-                    NEW_SCOPE(
-                        // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
-                        BOOLEAN newValue = TRUE;
-                        g_Apis.pTraceAccessMemory(&newValue, pThreadInfo, sizeof(newValue), 1, false);
-                    );
-                    break;
-                }
-
-                // reset length
-                if (pThreadInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, false);
-                }
+        if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN) && g_Apis.pGetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA) && pThreadInfo) {
+            // backup length (it can be null, in which case, don't read it)
+            uint32_t origThreadInfoLen = 0;
+            if (pThreadInfoLen) {
+                g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, true);
             }
+
+            switch (threadInfoClass) {
+            case (uint64_t)THREADINFOCLASS::ThreadWow64Context:
+                NEW_SCOPE(
+                    uint64_t newValue = 0;
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr0), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr1), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr2), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr3), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr6), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr7), sizeof(newValue), 1, false);
+                );
+                break;
+            case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
+                NEW_SCOPE(
+                    // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
+                    BOOLEAN newValue = TRUE;
+                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo, sizeof(newValue), 1, false);
+                );
+                break;
+            }
+
+            // reset length
+            if (pThreadInfoLen) {
+                g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, false);
+            }
+        }
         );
         break;
     case PROBE_IDS::IdGetContextThread:
         NEW_SCOPE(
-            uint64_t pContextThreadData = {0};
-            if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
-                uint64_t newValue = 0;
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr0), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr1), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr2), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr3), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr6), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr7), sizeof(newValue), 1, false);
+            uint64_t pContextThreadData = { 0 };
+        if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
+            uint64_t newValue = 0;
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr0), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr1), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr2), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr3), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr6), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr7), sizeof(newValue), 1, false);
 
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchToRip), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchFromRip), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionToRip), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionFromRip), sizeof(newValue), 1, false);
-            }
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchToRip), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchFromRip), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionToRip), sizeof(newValue), 1, false);
+            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionFromRip), sizeof(newValue), 1, false);
+        }
         );
         break;
     case PROBE_IDS::IdClose:
@@ -434,6 +434,23 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t objectInfoData = 0;
             uint64_t objectInfoLen = 0;
 
+            auto ZeroDbgObject = [&](uint64_t pObjInfo, OBJECT_TYPE_INFORMATION& typeInfo) {
+                if (g_Apis.pTraceAccessMemory(&typeInfo, (ULONG_PTR)pObjInfo, sizeof(typeInfo), 1, true)) {
+                    wchar_t typeName[12] = { 0 };
+                    wchar_t target[] = L"DebugObject";
+                    uint32_t typeNameByteSize = typeInfo.TypeName.Length > sizeof(typeName) ? sizeof(typeName) : typeInfo.TypeName.Length;
+                    if (g_Apis.pTraceAccessMemory(&typeName, (ULONG_PTR)typeInfo.TypeName.Buffer, typeNameByteSize, 1, true)) {
+                        if (memcmp(typeName, target, typeNameByteSize) == 0) {
+                            typeInfo.TotalNumberOfObjects = 0;
+                            typeInfo.TotalNumberOfHandles = 0;
+                            return (bool)g_Apis.pTraceAccessMemory(&typeInfo, pObjInfo, sizeof(typeInfo), 1, false);
+                        }
+                        return true;
+                    }
+                }
+                return false;
+            };
+
             NTSTATUS status = ctx.read_return_value();
             if (NT_SUCCESS(status) && g_Apis.pGetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS) && g_Apis.pGetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA) && g_Apis.pGetTlsData(objectInfoLen, TLS_SLOTS::OBJECT_INFO_RET_LEN) && objectInfoData) {
                 /*
@@ -446,7 +463,35 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                     g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoLen, sizeof(origObjectInfoLen), 1, true);
                 }
 
+                switch (objectInfoClass) {
+                case ObjectTypeInformation: {
+                    OBJECT_TYPE_INFORMATION typeInfo = { 0 };
+                    ZeroDbgObject(objectInfoData, typeInfo);
+                    break;
+                }
+                case ObjectTypesInformation: {
+                    OBJECT_ALL_INFORMATION objectAllInfo = { 0 };
+                    if (g_Apis.pTraceAccessMemory(&objectAllInfo, objectInfoData, sizeof(objectAllInfo), 1, true)) {
+                        uint32_t numberOfObjects = objectAllInfo.NumberOfObjects;
+                        char* pObjInfoLocation = (char*)objectAllInfo.ObjectTypeInformation;
+                        for (uint32_t i = 0; i < numberOfObjects; i++) {
+                            OBJECT_TYPE_INFORMATION typeInfo = { 0 };
+                            if (!ZeroDbgObject((uint64_t)pObjInfoLocation, typeInfo))
+                                break;
 
+                            pObjInfoLocation = ((char*)typeInfo.TypeName.Buffer) + typeInfo.TypeName.MaximumLength;
+
+                            // alignment
+                            ULONG_PTR tmp = ((ULONG_PTR)pObjInfoLocation) & -(LONG_PTR)sizeof(void*);
+                            if ((ULONG_PTR)tmp != (ULONG_PTR)pObjInfoLocation)
+                                tmp += sizeof(void*);
+
+                            pObjInfoLocation = (char*)tmp;
+                        }
+                    }
+                    break;
+                }
+                }
 
                 // reset length
                 if (objectInfoLen) {

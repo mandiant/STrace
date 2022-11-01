@@ -33,6 +33,27 @@ typedef struct _OBJECT_HANDLE_INFORMATION
 
 typedef struct _OBJECT_TYPE* POBJECT_TYPE;
 
+typedef struct _OBJECT_TYPE_INFORMATION
+{
+    UNICODE_STRING TypeName;
+    ULONG TotalNumberOfHandles;
+    ULONG TotalNumberOfObjects;
+} OBJECT_TYPE_INFORMATION, *POBJECT_TYPE_INFORMATION;
+
+typedef struct _OBJECT_ALL_INFORMATION
+{
+    ULONG NumberOfObjects;
+    OBJECT_TYPE_INFORMATION ObjectTypeInformation[1];
+} OBJECT_ALL_INFORMATION, * POBJECT_ALL_INFORMATION;
+
+typedef enum _OBJECT_INFORMATION_CLASS
+{
+    ObjectBasicInformation,
+    ObjectNameInformation,
+    ObjectTypeInformation,
+    ObjectTypesInformation,
+    ObjectDataInformation
+} OBJECT_INFORMATION_CLASS, *POBJECT_INFORMATION_CLASS;
 
 typedef CCHAR KPROCESSOR_MODE;
 
@@ -229,12 +250,6 @@ typedef struct _FILE_NAME_INFORMATION {
     WCHAR FileName[1];
 } FILE_NAME_INFORMATION, * PFILE_NAME_INFORMATION;
 
-typedef enum _OBJECT_INFORMATION_CLASS {
-    ObjectBasicInformation = 0,
-    ObjectNameInformation = 1,
-    ObjectTypeInformation = 2
-} OBJECT_INFORMATION_CLASS;
-
 #define STATUS_PORT_NOT_SET 0xC0000353L
 #define STATUS_INFO_LENGTH_MISMATCH 0xC0000004L
 #define STATUS_UNSUCCESSFUL 0xC0000001L
@@ -242,7 +257,7 @@ typedef enum _OBJECT_INFORMATION_CLASS {
 typedef struct _OBJECT_NAME_INFORMATION {
     UNICODE_STRING          Name;
     WCHAR*                  NameBuffer;
-} OBJECT_NAME_INFORMATION, * POBJECT_NAME_INFORMATION;
+} OBJECT_NAME_INFORMATION, *POBJECT_NAME_INFORMATION;
 
 extern "C" __declspec(dllimport) PVOID NTAPI ExAllocatePoolWithTag(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag);
 extern "C" __declspec(dllimport) void NTAPI ExFreePoolWithTag(PVOID P, ULONG Tag);
