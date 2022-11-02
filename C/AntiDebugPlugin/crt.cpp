@@ -55,6 +55,16 @@ int strcmp(const char* s1, const char* s2)
     return (*(unsigned char*)s1 - *(unsigned char*)--s2);
 }
 
+#pragma function(wcscmp)
+extern "C" int wcscmp(const wchar_t* s1, const wchar_t* s2)
+{
+    while (*s1 == *s2++)
+        if (*s1++ == '\0')
+            return (0);
+
+    return (*(const unsigned int*)s1 - *(const unsigned int*)--s2);
+}
+
 void __chkstk() {
     // chkstk being inserted by the compiler means we took up too much stack space.
     // this would otherwise crashus with a page fault. So uh, lets debug break instead.

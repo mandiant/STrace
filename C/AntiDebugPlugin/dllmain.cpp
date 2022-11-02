@@ -12,11 +12,65 @@
 
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
+HANDLE g_hGlobalPollThrd = 0;
+BOOLEAN g_GlobalThreadShouldDie = FALSE;
+LONGLONG g_ThreadWaitInterval = 10000000;  // 1 second (unit of 100 nanoseconds each)
+void* g_GlobalPollThrdObject = nullptr;
+
+const wchar_t targetProcW[] = L"al-khaser.exe";
+const char targetProcA[] = "al-khaser.exe";
 
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_ERROR(fmt,...)  g_Apis.pLogPrint(LogLevelError, __FUNCTION__, fmt,   __VA_ARGS__)
+
+VOID GlobalPollThread(PVOID Context) {
+    // must do this here since this call requires PASSIVE_LEVEL
+    if (!g_GlobalPollThrdObject) {
+        if(!NT_SUCCESS(ObReferenceObjectByHandle(g_hGlobalPollThrd, THREAD_ALL_ACCESS, NULL, KernelMode, &g_GlobalPollThrdObject, NULL))) {
+            g_GlobalPollThrdObject = nullptr;
+        }
+    }
+
+    while (!g_GlobalThreadShouldDie) {
+        ULONG bufferSize = 0;
+        if (ZwQuerySystemInformation(SystemProcessInformation, NULL, 0, &bufferSize) == STATUS_INFO_LENGTH_MISMATCH) {
+            char* pBuf = (char*)ExAllocatePoolWithTag(NonPagedPool, bufferSize, POOL_TAG);
+            if (!pBuf) {
+                continue;
+            }
+
+            if (NT_SUCCESS(ZwQuerySystemInformation(SystemProcessInformation, pBuf, bufferSize, &bufferSize))) {
+                PSYSTEM_PROCESSES process = (PSYSTEM_PROCESSES)pBuf;
+                do {
+                    if (process->ProcessName.Length && process->ProcessName.Buffer && wcscmp(process->ProcessName.Buffer, targetProcW) == 0) {
+                        void* eprocess = nullptr;
+                        NTSTATUS status = PsLookupProcessByProcessId((HANDLE)process->ProcessId, &eprocess);
+                        if (NT_SUCCESS(status)) {
+                            KAPC_STATE state = {0};
+                            KeStackAttachProcess(eprocess, &state);
+    
+                            PPEB pPeb = PsGetProcessPeb(eprocess);
+
+                            uint64_t newValue = 0;
+                            g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)((char*)pPeb + offsetof(PEB, BeingDebugged)), sizeof(PEB::BeingDebugged), 1, false);
+                            
+                            KeUnstackDetachProcess(&state);
+                        }
+                    }
+                    process = (PSYSTEM_PROCESSES)((char*)process + process->NextEntryDelta);
+                }while(process->NextEntryDelta);
+            }
+
+            ExFreePoolWithTag(pBuf, POOL_TAG);
+        }
+        
+        LARGE_INTEGER sleep = {0};
+        sleep.QuadPart = -g_ThreadWaitInterval;
+        KeDelayExecutionThread(KernelMode, FALSE, &sleep);
+    }
+}
 
 extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis = pApis;
@@ -29,6 +83,9 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("Close", PROBE_IDS::IdClose);
     g_Apis.pSetCallback("CreateThreadEx", PROBE_IDS::IdCreateThreadEx);
     g_Apis.pSetCallback("QueryObject", PROBE_IDS::IdQueryObject);
+    g_Apis.pSetCallback("QuerySystemInformation", PROBE_IDS::IdQuerySystemInformation);
+
+    NTSTATUS status = PsCreateSystemThread(&g_hGlobalPollThrd,(ACCESS_MASK)0,NULL,(HANDLE)0,NULL,GlobalPollThread,NULL);
 
     LOG_INFO("Plugin Initialized\r\n");
 }
@@ -37,6 +94,15 @@ ASSERT_INTERFACE_IMPLEMENTED(StpInitialize, tStpInitialize, "StpInitialize does 
 extern "C" __declspec(dllexport) void StpDeInitialize() {
     LOG_INFO("Plugin DeInitializing...\r\n");
 
+    // Wait for thread to die (timeout necessary at dispatch level)
+    if(g_GlobalPollThrdObject) {
+        g_GlobalThreadShouldDie = TRUE;
+        LARGE_INTEGER sleep = { 0 };
+        sleep.QuadPart = -(g_ThreadWaitInterval * 3); // max of 3x what the thread sleeps for should be fine
+        KeWaitForSingleObject(g_GlobalPollThrdObject, KWAIT_REASON::Executive, KernelMode, FALSE, &sleep);
+        g_hGlobalPollThrd = 0;
+    }
+
     g_Apis.pUnsetCallback("QueryInformationProcess");
     g_Apis.pUnsetCallback("QueryInformationThread");
     g_Apis.pUnsetCallback("GetContextThread");
@@ -44,6 +110,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("Close");
     g_Apis.pUnsetCallback("CreateThreadEx");
     g_Apis.pUnsetCallback("QueryObject");
+    g_Apis.pUnsetCallback("QuerySystemInformation");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -80,7 +147,7 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-    if (strcmp(callerinfo.processName, "al-khaser.exe") == 0) {
+    if (strcmp(callerinfo.processName, targetProcA) == 0) {
         return true;
     }
     return false;
@@ -104,7 +171,11 @@ enum TLS_SLOTS : uint8_t {
 
     OBJECT_INFO_CLASS = 10,
     OBJECT_INFO_DATA = 11,
-    OBJECT_INFO_RET_LEN = 12
+    OBJECT_INFO_RET_LEN = 12,
+
+    SYS_INFO_CLASS = 13,
+    SYS_INFO_DATA = 14,
+    SYS_INFO_RET_LEN = 15
 };
 
 /*
@@ -191,12 +262,12 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     case PROBE_IDS::IdQueryInformationProcess:
         NEW_SCOPE(
             auto processInfoClass = ctx.read_argument(1);
-            auto pProcessInfo = ctx.read_argument(2);
-            auto pProcessInfoLen = ctx.read_argument(4);
+            auto processInfoData = ctx.read_argument(2);
+            auto processInfoRetLen = ctx.read_argument(4);
 
             g_Apis.pSetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS);
-            g_Apis.pSetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA);
-            g_Apis.pSetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN);
+            g_Apis.pSetTlsData(processInfoData, TLS_SLOTS::PROCESS_INFO_DATA);
+            g_Apis.pSetTlsData(processInfoRetLen, TLS_SLOTS::PROCESS_INFO_RET_LEN);
         );
         break;
     case PROBE_IDS::IdGetContextThread:
@@ -208,12 +279,12 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     case PROBE_IDS::IdQueryInformationThread:
         NEW_SCOPE(
             auto threadInfoClass = ctx.read_argument(1);
-            auto pThreadInfo = ctx.read_argument(2);
-            auto pThreadInfoLen = ctx.read_argument(4);
+            auto threadInfoData = ctx.read_argument(2);
+            auto threadInfoRetLen = ctx.read_argument(4);
 
             g_Apis.pSetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS);
-            g_Apis.pSetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA);
-            g_Apis.pSetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN);
+            g_Apis.pSetTlsData(threadInfoData, TLS_SLOTS::THREAD_INFO_DATA);
+            g_Apis.pSetTlsData(threadInfoRetLen, TLS_SLOTS::THREAD_INFO_RET_LEN);
         );
         break;
     case PROBE_IDS::IdSetInformationThread:
@@ -230,7 +301,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         break;
     case PROBE_IDS::IdClose:
         /*When under a debugger, NtClose generates an exception for usermode apps if an invalid OR pseudohandle is closed.
-        We cannot cancel calls in the way inline hooks can, so we replace the handle with a valid one in these cases instead.*/
+        We have to replace the logic of this syscall entire. This mirrors the functionality an inline hook provides, but simpler. */
         NEW_SCOPE(
             HANDLE Handle = (HANDLE)ctx.read_argument(0);
             auto PreviousMode = ExGetPreviousMode();
@@ -243,6 +314,8 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 BOOLEAN BeingDebugged = PsGetProcessDebugPort(PsGetCurrentProcess()) != nullptr;
                 BOOLEAN GlobalFlgExceptions = RtlGetNtGlobalFlags() & FLG_ENABLE_CLOSE_EXCEPTIONS;
                 OBJECT_HANDLE_INFORMATION HandleInfo = { 0 };
+
+                // exceptions are raised if debugger attached OR global flag set
                 if (BeingDebugged || GlobalFlgExceptions)
                 {
                     // Get handle info so we can check if the handle has the ProtectFromClose bit set
@@ -266,12 +339,13 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                     g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, CLOSE_RETVAL);
                     g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
                 } else {
-                    // really close, it's ok won't raise
+                    // actually do the close (ourselves), it's ok won't raise. Cancel the original close since we did it.
                     ctx.redirect_syscall((uint64_t)&noop);
                     g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), CLOSE_RETVAL);
                     g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
                 }
             } else {
+                // the handle is invalid, would raise so cancel that, just set status
                 ctx.redirect_syscall((uint64_t)&noop);
                 g_Apis.pSetTlsData(STATUS_INVALID_HANDLE, CLOSE_RETVAL);
                 g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
@@ -291,11 +365,22 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         NEW_SCOPE(
             auto objectInfoClass = ctx.read_argument(1);
             auto objectInfoData = ctx.read_argument(2);
-            auto objectInfoLen = ctx.read_argument(4);
+            auto objectInfoRetLen = ctx.read_argument(4);
 
             g_Apis.pSetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS);
             g_Apis.pSetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA);
-            g_Apis.pSetTlsData(objectInfoLen, TLS_SLOTS::OBJECT_INFO_RET_LEN);
+            g_Apis.pSetTlsData(objectInfoRetLen, TLS_SLOTS::OBJECT_INFO_RET_LEN);
+        );
+        break;
+    case PROBE_IDS::IdQuerySystemInformation:
+        NEW_SCOPE(
+            auto sysInfoClass = ctx.read_argument(0);
+            auto sysInfoData = ctx.read_argument(1);
+            auto sysInfoRetLen = ctx.read_argument(3);
+
+            g_Apis.pSetTlsData(sysInfoClass, TLS_SLOTS::SYS_INFO_CLASS);
+            g_Apis.pSetTlsData(sysInfoData, TLS_SLOTS::SYS_INFO_DATA);
+            g_Apis.pSetTlsData(sysInfoRetLen, TLS_SLOTS::SYS_INFO_RET_LEN);
         );
         break;
     default:
@@ -320,103 +405,103 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         // overwritten too since they're the same buffer. Fixing the Length value means, we have to write it too, which is why we bother backing it up.
         NEW_SCOPE(
             uint64_t processInfoClass = 0;
-        uint64_t pProcessInfo = 0;
-        uint64_t pProcessInfoLen = 0;
+            uint64_t processInfoData = 0;
+            uint64_t processInfoLen = 0;
 
-        if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(pProcessInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN) && g_Apis.pGetTlsData(pProcessInfo, TLS_SLOTS::PROCESS_INFO_DATA) && pProcessInfo) {
-            // backup length (it can be null, in which case, don't read it)
-            uint32_t origProcessInfoLen = 0;
-            if (pProcessInfoLen) {
-                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, true);
-            }
-
-            switch (processInfoClass) {
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
-                NEW_SCOPE(
-                    DWORD64 newValue = 0;
-                g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                );
-                break;
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
-                NEW_SCOPE(
-                    DWORD newValue = 1;
-                g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                );
-                break;
-            case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
-                if (ctx.read_return_value() == STATUS_SUCCESS) {
-                    HANDLE newValue = 0;
-                    g_Apis.pTraceAccessMemory(&newValue, pProcessInfo, sizeof(newValue), 1, false);
-                    ctx.write_return_value(STATUS_PORT_NOT_SET);
+            if (g_Apis.pGetTlsData(processInfoClass, TLS_SLOTS::PROCESS_INFO_CLASS) && g_Apis.pGetTlsData(processInfoLen, TLS_SLOTS::PROCESS_INFO_RET_LEN) && g_Apis.pGetTlsData(processInfoData, TLS_SLOTS::PROCESS_INFO_DATA) && processInfoData) {
+                // backup length (it can be null, in which case, don't read it)
+                uint32_t origProcessInfoLen = 0;
+                if (processInfoLen) {
+                    g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, true);
                 }
-                break;
-            }
 
-            // reset length
-            if (pProcessInfoLen) {
-                g_Apis.pTraceAccessMemory(&origProcessInfoLen, pProcessInfoLen, sizeof(origProcessInfoLen), 1, false);
+                switch (processInfoClass) {
+                case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
+                    NEW_SCOPE(
+                        DWORD64 newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
+                    );
+                    break;
+                case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
+                    NEW_SCOPE(
+                        DWORD newValue = 1;
+                        g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
+                    );
+                    break;
+                case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
+                    if (ctx.read_return_value() == STATUS_SUCCESS) {
+                        HANDLE newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
+                        ctx.write_return_value(STATUS_PORT_NOT_SET);
+                    }
+                    break;
+                }
+
+                // reset length
+                if (processInfoLen) {
+                    g_Apis.pTraceAccessMemory(&origProcessInfoLen, processInfoLen, sizeof(origProcessInfoLen), 1, false);
+                }
             }
-        }
         );
         break;
     case PROBE_IDS::IdQueryInformationThread:
         NEW_SCOPE(
             uint64_t threadInfoClass = 0;
-        uint64_t pThreadInfo = 0;
-        uint64_t pThreadInfoLen = 0;
+            uint64_t threadInfoData = 0;
+            uint64_t threadInfoRetLen = 0;
 
-        if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(pThreadInfoLen, TLS_SLOTS::THREAD_INFO_RET_LEN) && g_Apis.pGetTlsData(pThreadInfo, TLS_SLOTS::THREAD_INFO_DATA) && pThreadInfo) {
-            // backup length (it can be null, in which case, don't read it)
-            uint32_t origThreadInfoLen = 0;
-            if (pThreadInfoLen) {
-                g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, true);
-            }
+            if (g_Apis.pGetTlsData(threadInfoClass, TLS_SLOTS::THREAD_INFO_CLASS) && g_Apis.pGetTlsData(threadInfoRetLen, TLS_SLOTS::THREAD_INFO_RET_LEN) && g_Apis.pGetTlsData(threadInfoData, TLS_SLOTS::THREAD_INFO_DATA) && threadInfoData) {
+                // backup length (it can be null, in which case, don't read it)
+                uint32_t origThreadInfoLen = 0;
+                if (threadInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origThreadInfoLen, threadInfoRetLen, sizeof(origThreadInfoLen), 1, true);
+                }
 
-            switch (threadInfoClass) {
-            case (uint64_t)THREADINFOCLASS::ThreadWow64Context:
-                NEW_SCOPE(
-                    uint64_t newValue = 0;
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr0), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr1), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr2), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr3), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr6), sizeof(newValue), 1, false);
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo + offsetof(WOW64_CONTEXT, Dr7), sizeof(newValue), 1, false);
-                );
-                break;
-            case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
-                NEW_SCOPE(
-                    // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
-                    BOOLEAN newValue = TRUE;
-                g_Apis.pTraceAccessMemory(&newValue, pThreadInfo, sizeof(newValue), 1, false);
-                );
-                break;
-            }
+                switch (threadInfoClass) {
+                case (uint64_t)THREADINFOCLASS::ThreadWow64Context:
+                    NEW_SCOPE(
+                        uint64_t newValue = 0;
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr0), sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr1), sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr2), sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr3), sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr6), sizeof(newValue), 1, false);
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr7), sizeof(newValue), 1, false);
+                    );
+                    break;
+                case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
+                    NEW_SCOPE(
+                        // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
+                        BOOLEAN newValue = TRUE;
+                        g_Apis.pTraceAccessMemory(&newValue, threadInfoData, sizeof(newValue), 1, false);
+                    );
+                    break;
+                }
 
-            // reset length
-            if (pThreadInfoLen) {
-                g_Apis.pTraceAccessMemory(&origThreadInfoLen, pThreadInfoLen, sizeof(origThreadInfoLen), 1, false);
+                // reset length
+                if (threadInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origThreadInfoLen, threadInfoRetLen, sizeof(origThreadInfoLen), 1, false);
+                }
             }
-        }
         );
         break;
     case PROBE_IDS::IdGetContextThread:
         NEW_SCOPE(
             uint64_t pContextThreadData = { 0 };
-        if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
-            uint64_t newValue = 0;
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr0), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr1), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr2), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr3), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr6), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr7), sizeof(newValue), 1, false);
+            if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
+                uint64_t newValue = 0;
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr0), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr1), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr2), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr3), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr6), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr7), sizeof(newValue), 1, false);
 
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchToRip), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchFromRip), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionToRip), sizeof(newValue), 1, false);
-            g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionFromRip), sizeof(newValue), 1, false);
-        }
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchToRip), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastBranchFromRip), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionToRip), sizeof(newValue), 1, false);
+                g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, LastExceptionFromRip), sizeof(newValue), 1, false);
+            }
         );
         break;
     case PROBE_IDS::IdClose:
@@ -432,15 +517,14 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         NEW_SCOPE(
             uint64_t objectInfoClass = 0;
             uint64_t objectInfoData = 0;
-            uint64_t objectInfoLen = 0;
+            uint64_t objectInfoRetLen = 0;
 
             auto ZeroDbgObject = [&](uint64_t pObjInfo, OBJECT_TYPE_INFORMATION& typeInfo) {
                 if (g_Apis.pTraceAccessMemory(&typeInfo, (ULONG_PTR)pObjInfo, sizeof(typeInfo), 1, true)) {
-                    wchar_t typeName[12] = { 0 };
-                    wchar_t target[] = L"DebugObject";
+                    wchar_t typeName[20] = { 0 };
                     uint32_t typeNameByteSize = typeInfo.TypeName.Length > sizeof(typeName) ? sizeof(typeName) : typeInfo.TypeName.Length;
                     if (g_Apis.pTraceAccessMemory(&typeName, (ULONG_PTR)typeInfo.TypeName.Buffer, typeNameByteSize, 1, true)) {
-                        if (memcmp(typeName, target, typeNameByteSize) == 0) {
+                        if (wcscmp(typeName, L"DebugObject") == 0) {
                             typeInfo.TotalNumberOfObjects = 0;
                             typeInfo.TotalNumberOfHandles = 0;
                             return (bool)g_Apis.pTraceAccessMemory(&typeInfo, pObjInfo, sizeof(typeInfo), 1, false);
@@ -452,15 +536,15 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             };
 
             NTSTATUS status = ctx.read_return_value();
-            if (NT_SUCCESS(status) && g_Apis.pGetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS) && g_Apis.pGetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA) && g_Apis.pGetTlsData(objectInfoLen, TLS_SLOTS::OBJECT_INFO_RET_LEN) && objectInfoData) {
+            if (NT_SUCCESS(status) && g_Apis.pGetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS) && g_Apis.pGetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA) && g_Apis.pGetTlsData(objectInfoRetLen, TLS_SLOTS::OBJECT_INFO_RET_LEN) && objectInfoData) {
                 /*
                 This isn't perfect. DebugObjects are always present in the output, so we can't remove them, but we can zero them.
                 Some things purposely create a debug object, then check if the count is zero, which detects anti-anti-dbg like this.
                 Need to hook NtCreateDebugObject, and increment by 1 for each call to that, before the handle is closed via NtClose. TODO
                 */
                 uint32_t origObjectInfoLen = 0;
-                if (objectInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoLen, sizeof(origObjectInfoLen), 1, true);
+                if (objectInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoRetLen, sizeof(origObjectInfoLen), 1, true);
                 }
 
                 switch (objectInfoClass) {
@@ -494,8 +578,50 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 }
 
                 // reset length
-                if (objectInfoLen) {
-                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoLen, sizeof(origObjectInfoLen), 1, false);
+                if (objectInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origObjectInfoLen, objectInfoRetLen, sizeof(origObjectInfoLen), 1, false);
+                }
+            }
+        );
+        break;
+    case IdQuerySystemInformation:
+        NEW_SCOPE(
+            uint64_t sysInfoClass = 0;
+            uint64_t sysInfoData = 0;
+            uint64_t sysInfoRetLen = 0;
+
+            NTSTATUS status = ctx.read_return_value();
+            if (NT_SUCCESS(status) && g_Apis.pGetTlsData(sysInfoClass, TLS_SLOTS::SYS_INFO_CLASS) && g_Apis.pGetTlsData(sysInfoData, TLS_SLOTS::SYS_INFO_DATA) && g_Apis.pGetTlsData(sysInfoRetLen, TLS_SLOTS::SYS_INFO_RET_LEN) && sysInfoData) {
+                uint32_t origSysInfoLen = 0;
+                if (sysInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origSysInfoLen, sysInfoRetLen, sizeof(origSysInfoLen), 1, true);
+                }
+
+                switch (sysInfoClass) {
+                case SystemKernelDebuggerInformation: {
+                    SYSTEM_KERNEL_DEBUGGER_INFORMATION debugInfo = { 0 };
+                    if (g_Apis.pTraceAccessMemory(&debugInfo, sysInfoData, sizeof(debugInfo), 1, true)) {
+                        debugInfo.DebuggerEnabled = false;
+                        debugInfo.DebuggerNotPresent = true;
+                        g_Apis.pTraceAccessMemory(&debugInfo, sysInfoData, sizeof(debugInfo), 1, false);
+                    }
+                    break;
+                }
+                case SystemKernelDebuggerInformationEx: {
+                    SYSTEM_KERNEL_DEBUGGER_INFORMATION_EX debugInfoEx = { 0 };
+                    if (g_Apis.pTraceAccessMemory(&debugInfoEx, sysInfoData, sizeof(debugInfoEx), 1, true)) {
+                        debugInfoEx.DebuggerAllowed = false;
+                        debugInfoEx.DebuggerEnabled = false;
+                        debugInfoEx.DebuggerPresent = false;
+                        g_Apis.pTraceAccessMemory(&debugInfoEx, sysInfoData, sizeof(debugInfoEx), 1, false);
+                    }
+                    break;
+                }
+                }
+
+                // reset length
+                if (sysInfoRetLen) {
+                    g_Apis.pTraceAccessMemory(&origSysInfoLen, sysInfoRetLen, sizeof(origSysInfoLen), 1, false);
                 }
             }
         );

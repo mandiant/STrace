@@ -26,7 +26,7 @@ public:
         pDeInitialize = deinit;
         pIsTarget = istarget;
         pDtEtwpEventCallback = etw;
-
+        
         // set pImageBase last since it's used atomically for isLoaded
         auto expected = pImageBase;
         auto atomicGot = (uint64_t)_InterlockedCompareExchange64((volatile LONG64*)&pImageBase, base, expected);
@@ -48,7 +48,7 @@ public:
         }
         return false;
     }
-
+    
     tStpIsTarget pIsTarget;
     tStpCallbackEntryPlugin pCallbackEntry;
     tStpCallbackReturnPlugin pCallbackReturn;
@@ -93,7 +93,7 @@ NTSTATUS UnSetCallbackApi(const char* syscallName) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
         return STATUS_UNSUCCESSFUL;
     }
-
+    
     NTSTATUS status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, true, 0, 0);
     if (NT_SUCCESS(status)) {
         status = TraceSystemApi->KeSetSystemServiceCallback(syscallName, false, 0, 0);

@@ -20,4 +20,7 @@ extern "C" void* memcpy(void* dest, const void* src, size_t n);
 extern "C" int strcmp(const char* s1, const char* s2);
 #pragma intrinsic(strcmp)
 
+extern "C" int wcscmp(const wchar_t* s1, const wchar_t* s2);
+#pragma intrinsic(wcscmp)
+
 extern "C" void __chkstk();
