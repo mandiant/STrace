@@ -505,7 +505,7 @@ Return Value:
         LOG_WARN("Unrecognized ioctl 0x%x\r\n", Ioctl);
         break;
     }
-
+    
     exit:
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);

@@ -48,14 +48,55 @@ VOID GlobalPollThread(PVOID Context) {
                         void* eprocess = nullptr;
                         NTSTATUS status = PsLookupProcessByProcessId((HANDLE)process->ProcessId, &eprocess);
                         if (NT_SUCCESS(status)) {
+                            // PEB is in user process address space
                             KAPC_STATE state = {0};
                             KeStackAttachProcess(eprocess, &state);
     
-                            PPEB pPeb = PsGetProcessPeb(eprocess);
+                            PEB32* pPEB32 = (PEB32*)PsGetProcessWow64Process(eprocess);
+                            PEB* pPeb = PsGetProcessPeb(eprocess);
+
+                            auto CleanHeap = [](char* processHeap, const uint32_t FlagsOffset, const uint32_t ForceFlagsOffset) {
+                                int32_t flags = 0;
+                                int32_t forceFlags = 0;
+                                if (g_Apis.pTraceAccessMemory(&flags, (ULONG_PTR)(processHeap + FlagsOffset), sizeof(flags), 1, true) && g_Apis.pTraceAccessMemory(&forceFlags, (ULONG_PTR)(processHeap + ForceFlagsOffset), sizeof(forceFlags), 1, true)) {
+                                    flags &= ~HEAP_CLEARABLE_FLAGS;
+                                    forceFlags &= ~HEAP_CLEARABLE_FORCE_FLAGS;
+
+                                    g_Apis.pTraceAccessMemory(&flags, (ULONG_PTR)(processHeap + FlagsOffset), sizeof(flags), 1, false);
+                                    g_Apis.pTraceAccessMemory(&forceFlags, (ULONG_PTR)(processHeap + ForceFlagsOffset), sizeof(forceFlags), 1, false);
+                                }
+                            };
+
+                            auto CleanPEB = []<typename T>(char* pPeb, uint64_t& processHeap) {
+                                uint64_t newValue = 0;
+                                g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)(pPeb + offsetof(T, BeingDebugged)), sizeof(T::BeingDebugged), 1, false);
+                                g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)(pPeb + offsetof(T, NtGlobalFlag)), sizeof(T::NtGlobalFlag), 1, false);
+
+                                if (!g_Apis.pTraceAccessMemory(&processHeap, (ULONG_PTR)(pPeb + offsetof(T, ProcessHeap)), sizeof(T::ProcessHeap), 1, true)) {
+                                    processHeap = 0;
+                                }
+                            };
 
                             uint64_t newValue = 0;
-                            g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)((char*)pPeb + offsetof(PEB, BeingDebugged)), sizeof(PEB::BeingDebugged), 1, false);
-                            
+                            if (pPEB32) {
+                                uint64_t processHeap = 0;
+                                CleanPEB.template operator()<PEB32>((char*)pPEB32, processHeap);
+
+                                if (processHeap) {
+                                    const uint32_t FlagsOffset = 0x40; // Win10+
+                                    const uint32_t ForceFlagsOffset = 0x44; // Win10+
+                                    CleanHeap((char*)processHeap, FlagsOffset, ForceFlagsOffset);
+                                }
+                            } else {
+                                uint64_t processHeap = 0;
+                                CleanPEB.template operator()<PEB>((char*)pPeb, processHeap);
+
+                                if (processHeap) {
+                                    const uint32_t FlagsOffset = 0x70; // Win10+
+                                    const uint32_t ForceFlagsOffset = 0x74; // Win10+
+                                    CleanHeap((char*)processHeap, FlagsOffset, ForceFlagsOffset);
+                                }
+                            }
                             KeUnstackDetachProcess(&state);
                         }
                     }
@@ -84,6 +125,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("CreateThreadEx", PROBE_IDS::IdCreateThreadEx);
     g_Apis.pSetCallback("QueryObject", PROBE_IDS::IdQueryObject);
     g_Apis.pSetCallback("QuerySystemInformation", PROBE_IDS::IdQuerySystemInformation);
+    g_Apis.pSetCallback("OpenProcess", PROBE_IDS::IdOpenProcess);
 
     NTSTATUS status = PsCreateSystemThread(&g_hGlobalPollThrd,(ACCESS_MASK)0,NULL,(HANDLE)0,NULL,GlobalPollThread,NULL);
 
@@ -111,6 +153,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("CreateThreadEx");
     g_Apis.pUnsetCallback("QueryObject");
     g_Apis.pUnsetCallback("QuerySystemInformation");
+    g_Apis.pUnsetCallback("OpenProcess");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -244,6 +287,14 @@ DECLSPEC_NOINLINE NTSTATUS NoopNtSetInformationThread(
     }
 
     return STATUS_SUCCESS;
+}
+
+DECLSPEC_NOINLINE NTSTATUS noop_openprocess_accessdenied(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+    if (ProcessHandle) {
+        HANDLE newValue = 0;
+        g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)ProcessHandle, sizeof(newValue), 1, false);
+    }
+    return STATUS_ACCESS_DENIED; 
 }
 
 /**
@@ -381,6 +432,22 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             g_Apis.pSetTlsData(sysInfoClass, TLS_SLOTS::SYS_INFO_CLASS);
             g_Apis.pSetTlsData(sysInfoData, TLS_SLOTS::SYS_INFO_DATA);
             g_Apis.pSetTlsData(sysInfoRetLen, TLS_SLOTS::SYS_INFO_RET_LEN);
+        );
+        break;
+    case PROBE_IDS::IdOpenProcess:
+        NEW_SCOPE(
+            uint64_t pClientId = ctx.read_argument(3);
+            CLIENT_ID clientId = {0};
+            if (pClientId && g_Apis.pTraceAccessMemory(&clientId, (ULONG_PTR)pClientId, sizeof(clientId), 1, true)) {
+                void* eprocess = nullptr;
+                PsLookupProcessByProcessId((HANDLE)clientId.UniqueProcess, &eprocess);
+                if (eprocess) {
+                    // Deny opening this to hide SeDebugPriviledge (TODO: other targets?)
+                    if (strcmp(PsGetProcessImageFileName(eprocess), "csrss.exe") == 0) {
+                        ctx.redirect_syscall((uint64_t)&noop_openprocess_accessdenied);
+                    }
+                }
+            }
         );
         break;
     default:
