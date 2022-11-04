@@ -126,6 +126,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("QueryObject", PROBE_IDS::IdQueryObject);
     g_Apis.pSetCallback("QuerySystemInformation", PROBE_IDS::IdQuerySystemInformation);
     g_Apis.pSetCallback("OpenProcess", PROBE_IDS::IdOpenProcess);
+    g_Apis.pSetCallback("SystemDebugControl", PROBE_IDS::IdSystemDebugControl);
 
     NTSTATUS status = PsCreateSystemThread(&g_hGlobalPollThrd,(ACCESS_MASK)0,NULL,(HANDLE)0,NULL,GlobalPollThread,NULL);
 
@@ -154,6 +155,7 @@ extern "C" __declspec(dllexport) void StpDeInitialize() {
     g_Apis.pUnsetCallback("QueryObject");
     g_Apis.pUnsetCallback("QuerySystemInformation");
     g_Apis.pUnsetCallback("OpenProcess");
+    g_Apis.pUnsetCallback("SystemDebugControl");
 
     LOG_INFO("Plugin DeInitialized\r\n");
 }
@@ -295,6 +297,21 @@ DECLSPEC_NOINLINE NTSTATUS noop_openprocess_accessdenied(PHANDLE ProcessHandle, 
         g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)ProcessHandle, sizeof(newValue), 1, false);
     }
     return STATUS_ACCESS_DENIED; 
+}
+
+DECLSPEC_NOINLINE NTSTATUS NTAPI NoopNtSystemDebugControl(
+    IN SYSDBG_COMMAND Command,
+    IN PVOID InputBuffer,
+    IN ULONG InputBufferLength,
+    OUT PVOID OutputBuffer,
+    IN ULONG OutputBufferLength,
+    OUT PULONG ReturnLength) {
+    if (((Command - SysDbgGetTriageDump) & 0xFFFFFFF7) != 0) {
+        return STATUS_DEBUGGER_INACTIVE;
+    } 
+
+    // SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode). Force this to always look like it failed.
+    return STATUS_ACCESS_DENIED;
 }
 
 /**
@@ -449,6 +466,9 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 }
             }
         );
+        break;
+    case PROBE_IDS::IdSystemDebugControl:
+        ctx.redirect_syscall((uint64_t)&NoopNtSystemDebugControl);
         break;
     default:
         break;
