@@ -17,8 +17,8 @@ BOOLEAN g_GlobalThreadShouldDie = FALSE;
 LONGLONG g_ThreadWaitInterval = 10000000;  // 1 second (unit of 100 nanoseconds each)
 void* g_GlobalPollThrdObject = nullptr;
 
-const wchar_t targetProcW[] = L"al-khaser.exe";
-const char targetProcA[] = "al-khaser.exe";
+const wchar_t targetProcW[] = L"BasicHello.exe";
+const char targetProcA[] = "BasicHello.exe";
 
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
@@ -314,6 +314,11 @@ DECLSPEC_NOINLINE NTSTATUS NTAPI NoopNtSystemDebugControl(
     return STATUS_ACCESS_DENIED;
 }
 
+void LogAntiDbg(const char* Msg, CallerInfo& callerinfo) {
+    LOG_INFO("[ANTI-DBG]%s\n", Msg);
+    PrintStackTrace(callerinfo);
+}
+
 /**
 pService: Pointer to system service from SSDT
 probeId: Identifier given in KeSetSystemServiceCallback for this syscall callback
@@ -361,6 +366,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 
             switch (threadInfoClass) {
             case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
+                LogAntiDbg("NtSetInformationThread ThreadHideFromDebugger", callerinfo);
                 // just do nothing, pretend the call happened ok
                 ctx.redirect_syscall((uint64_t)&NoopNtSetInformationThread);
                 break;
@@ -403,16 +409,20 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 // If debugged, or handle not closeable, avoid exception and give noncloseable back
                 if ((BeingDebugged || GlobalFlgExceptions) && NT_SUCCESS(ObStatus) && (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE))
                 {
+                    LogAntiDbg("NtClose on a handle that would RaiseException", callerinfo);
+
                     ctx.redirect_syscall((uint64_t)&noop);
                     g_Apis.pSetTlsData(STATUS_HANDLE_NOT_CLOSABLE, CLOSE_RETVAL);
                     g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
                 } else {
-                    // actually do the close (ourselves), it's ok won't raise. Cancel the original close since we did it.
+                    // Normal Path. Actually do the close (ourselves), it's ok won't raise. Cancel the original close since we did it (could let this occur as normal if we wanted).
                     ctx.redirect_syscall((uint64_t)&noop);
                     g_Apis.pSetTlsData(ObCloseHandle(Handle, PreviousMode), CLOSE_RETVAL);
                     g_Apis.pSetTlsData(TRUE, CLOSE_OVERWRITE_RETVAL);
                 }
             } else {
+                LogAntiDbg("NtClose on an Invalid Handle", callerinfo);
+
                 // the handle is invalid, would raise so cancel that, just set status
                 ctx.redirect_syscall((uint64_t)&noop);
                 g_Apis.pSetTlsData(STATUS_INVALID_HANDLE, CLOSE_RETVAL);
@@ -424,6 +434,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         NEW_SCOPE(
             ULONG createFlags = ctx.read_argument(6);
             if (createFlags & THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER != 0) {
+                LogAntiDbg("NtCreateThreadEx THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER", callerinfo);
                 createFlags &= ~THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER;
                 ctx.write_argument(6, createFlags);
             }
@@ -459,8 +470,9 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                 void* eprocess = nullptr;
                 PsLookupProcessByProcessId((HANDLE)clientId.UniqueProcess, &eprocess);
                 if (eprocess) {
-                    // Deny opening this to hide SeDebugPriviledge (TODO: other targets?)
+                    // Deny opening this to hide SeDebugPriviledge (TODO: there's other valid targets we should block, but do they actually get used IRL?)
                     if (strcmp(PsGetProcessImageFileName(eprocess), "csrss.exe") == 0) {
+                        LogAntiDbg("OpenProcess on csrss.exe to check for SeDebugPrivilege", callerinfo);
                         ctx.redirect_syscall((uint64_t)&noop_openprocess_accessdenied);
                     }
                 }
@@ -468,6 +480,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         );
         break;
     case PROBE_IDS::IdSystemDebugControl:
+        LogAntiDbg("NtSystemDebugControl", callerinfo);
         ctx.redirect_syscall((uint64_t)&NoopNtSystemDebugControl);
         break;
     default:
@@ -505,22 +518,29 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 switch (processInfoClass) {
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugPort:
                     NEW_SCOPE(
+                        LogAntiDbg("NtQueryInformationProcess ProcessDebugPort", callerinfo);
+
                         DWORD64 newValue = 0;
                         g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
                     );
                     break;
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
                     NEW_SCOPE(
+                        LogAntiDbg("NtQueryInformationProcess ProcessDebugFlags", callerinfo);
+
                         DWORD newValue = 1;
                         g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
                     );
                     break;
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugObjectHandle:
-                    if (ctx.read_return_value() == STATUS_SUCCESS) {
-                        HANDLE newValue = 0;
-                        g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
-                        ctx.write_return_value(STATUS_PORT_NOT_SET);
-                    }
+                    NEW_SCOPE(
+                        LogAntiDbg("NtQueryInformationProcess ProcessDebugObjectHandle", callerinfo);
+                        if (ctx.read_return_value() == STATUS_SUCCESS) {
+                            HANDLE newValue = 0;
+                            g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
+                            ctx.write_return_value(STATUS_PORT_NOT_SET);
+                        }
+                    );
                     break;
                 }
 
@@ -547,6 +567,8 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 switch (threadInfoClass) {
                 case (uint64_t)THREADINFOCLASS::ThreadWow64Context:
                     NEW_SCOPE(
+                        LogAntiDbg("NtQueryInformationThread ThreadWow64Context, potentially checking DBG registers", callerinfo);
+
                         uint64_t newValue = 0;
                         g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr0), sizeof(newValue), 1, false);
                         g_Apis.pTraceAccessMemory(&newValue, threadInfoData + offsetof(WOW64_CONTEXT, Dr1), sizeof(newValue), 1, false);
@@ -558,6 +580,8 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                     break;
                 case (uint64_t)THREADINFOCLASS::ThreadHideFromDebugger:
                     NEW_SCOPE(
+                        LogAntiDbg("NtQueryInformationThread ThreadHideFromDebugger, verifying was set and not previously bypassed (anti-anti-anti-dbg)", callerinfo);
+
                         // Assume they expect YES back (i.e. someone bothers to check if their SetThreadInfo call worked).
                         BOOLEAN newValue = TRUE;
                         g_Apis.pTraceAccessMemory(&newValue, threadInfoData, sizeof(newValue), 1, false);
@@ -576,6 +600,8 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
         NEW_SCOPE(
             uint64_t pContextThreadData = { 0 };
             if (g_Apis.pGetTlsData(pContextThreadData, TLS_SLOTS::CONTEXT_THREAD_DATA)) {
+                LogAntiDbg("NtGetContextThread, potentially checking DBG registers", callerinfo);
+
                 uint64_t newValue = 0;
                 g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr0), sizeof(newValue), 1, false);
                 g_Apis.pTraceAccessMemory(&newValue, pContextThreadData + offsetof(CONTEXT, Dr1), sizeof(newValue), 1, false);
@@ -606,6 +632,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t objectInfoData = 0;
             uint64_t objectInfoRetLen = 0;
 
+            // return: true if debugobject zeroed
             auto ZeroDbgObject = [&](uint64_t pObjInfo, OBJECT_TYPE_INFORMATION& typeInfo) {
                 if (g_Apis.pTraceAccessMemory(&typeInfo, (ULONG_PTR)pObjInfo, sizeof(typeInfo), 1, true)) {
                     wchar_t typeName[20] = { 0 };
@@ -616,7 +643,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                             typeInfo.TotalNumberOfHandles = 0;
                             return (bool)g_Apis.pTraceAccessMemory(&typeInfo, pObjInfo, sizeof(typeInfo), 1, false);
                         }
-                        return true;
+                        return false;
                     }
                 }
                 return false;
@@ -625,9 +652,10 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             NTSTATUS status = ctx.read_return_value();
             if (NT_SUCCESS(status) && g_Apis.pGetTlsData(objectInfoClass, TLS_SLOTS::OBJECT_INFO_CLASS) && g_Apis.pGetTlsData(objectInfoData, TLS_SLOTS::OBJECT_INFO_DATA) && g_Apis.pGetTlsData(objectInfoRetLen, TLS_SLOTS::OBJECT_INFO_RET_LEN) && objectInfoData) {
                 /*
-                This isn't perfect. DebugObjects are always present in the output, so we can't remove them, but we can zero them.
+                This isn't perfect. DebugObjects are always present in the output, so we can't remove them, but we can zero their counts.
                 Some things purposely create a debug object, then check if the count is zero, which detects anti-anti-dbg like this.
-                Need to hook NtCreateDebugObject, and increment by 1 for each call to that, before the handle is closed via NtClose. TODO
+                Need to hook NtCreateDebugObject, and increment by 1 for each call to that, before the handle is closed via NtClose.
+                TODO: fix this (it's hard), it's an anti-anti-anti-dbg technique (not common?)
                 */
                 uint32_t origObjectInfoLen = 0;
                 if (objectInfoRetLen) {
@@ -636,6 +664,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 
                 switch (objectInfoClass) {
                 case ObjectTypeInformation: {
+                    LogAntiDbg("NtQueryObject ObjectTypeInformation, count DebugObjects", callerinfo);
                     OBJECT_TYPE_INFORMATION typeInfo = { 0 };
                     ZeroDbgObject(objectInfoData, typeInfo);
                     break;
@@ -647,12 +676,15 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                         char* pObjInfoLocation = (char*)objectAllInfo.ObjectTypeInformation;
                         for (uint32_t i = 0; i < numberOfObjects; i++) {
                             OBJECT_TYPE_INFORMATION typeInfo = { 0 };
-                            if (!ZeroDbgObject((uint64_t)pObjInfoLocation, typeInfo))
+                            if (ZeroDbgObject((uint64_t)pObjInfoLocation, typeInfo)) {
+                                LogAntiDbg("NtQueryObject ObjectTypesInformation, count DebugObjects", callerinfo);
                                 break;
+                            }
 
                             pObjInfoLocation = ((char*)typeInfo.TypeName.Buffer) + typeInfo.TypeName.MaximumLength;
 
-                            // alignment
+                            // alignment (next info is next aligned pointer after end of where UNICODE_STRING.Buffer data is)
+                            // MS: what the heck is this structure layout???
                             ULONG_PTR tmp = ((ULONG_PTR)pObjInfoLocation) & -(LONG_PTR)sizeof(void*);
                             if ((ULONG_PTR)tmp != (ULONG_PTR)pObjInfoLocation)
                                 tmp += sizeof(void*);
@@ -686,6 +718,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 
                 switch (sysInfoClass) {
                 case SystemKernelDebuggerInformation: {
+                    LogAntiDbg("NtQuerySystemInformation SystemKernelDebuggerInformation", callerinfo);
                     SYSTEM_KERNEL_DEBUGGER_INFORMATION debugInfo = { 0 };
                     if (g_Apis.pTraceAccessMemory(&debugInfo, sysInfoData, sizeof(debugInfo), 1, true)) {
                         debugInfo.DebuggerEnabled = false;
@@ -695,6 +728,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                     break;
                 }
                 case SystemKernelDebuggerInformationEx: {
+                    LogAntiDbg("NtQuerySystemInformation SystemKernelDebuggerInformationEx", callerinfo);
                     SYSTEM_KERNEL_DEBUGGER_INFORMATION_EX debugInfoEx = { 0 };
                     if (g_Apis.pTraceAccessMemory(&debugInfoEx, sysInfoData, sizeof(debugInfoEx), 1, true)) {
                         debugInfoEx.DebuggerAllowed = false;
