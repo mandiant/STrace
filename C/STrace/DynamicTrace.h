@@ -2,6 +2,14 @@
 #include <ntifs.h>
 #include "MyStdint.h"
 #include "Constants.h"
+#include "Interface.h"
+
+// placement new
+inline void* __cdecl operator new(size_t size, void* location)
+{
+	UNREFERENCED_PARAMETER(size);
+	return location;
+}
 
 // ntoskrn has hardcoded check for this when doing TraceAccessMemory API calls
 static const uint64_t DTRACE_IRQL = 15;
@@ -19,6 +27,19 @@ static const uint8_t MAX_TLS_SLOT = 64;
 struct TLSData {
 	uint64_t calldepth;
 	uint64_t arbitraryData[MAX_TLS_SLOT];
+
+    // stored this way so we can in-place new later, as the construct captures a stack trace.
+    // we store this in TLS data at all, rather than on the stack, because we only need to capture one time on the entry probe,
+    // but we may want to delay printing stack traces until the return probe.
+	alignas(CallerInfo) char callerinfo[sizeof(CallerInfo)];
+
+	constexpr const CallerInfo& getCallerInfo() const {
+		return *static_cast<const CallerInfo*>(static_cast<const void*>(&callerinfo));
+	}
+
+	constexpr CallerInfo& getCallerInfo() {
+		return *static_cast<CallerInfo*>(static_cast<void*>(&callerinfo));
+	}
 };
 
 static bool TlsLookasideInitialized = false;
@@ -112,6 +133,9 @@ private:
 					return;
 				}
 				calledChildren = true;
+
+				// run constructor on caller info
+				new(static_cast<void*>(&((TLSData*)pTlsArray[0])->callerinfo)) CallerInfo();
 			}
 
 			// if allowed, free the data when the value is zero

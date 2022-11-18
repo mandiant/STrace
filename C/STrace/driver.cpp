@@ -153,9 +153,10 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 
     bool calledChildren = TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
-        CallerInfo callerInfo;
-        if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
-            callerInfo.CaptureStackTrace(calledChildren ? 1 : 0);
+        TLSData* ptlsData = TraceSystemApi->getRawTLSData();
+
+        if (pluginData.isLoaded() && pluginData.pCallbackEntry && pluginData.pIsTarget && pluginData.pIsTarget(ptlsData->getCallerInfo())) {
+            ptlsData->getCallerInfo().CaptureStackTrace(calledChildren ? 1 : 0);
     
             MachineState ctx = { 0 };
             ctx.pRegArgs = pArgs;
@@ -163,7 +164,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
             ctx.pStackArgs = (uint64_t*)pStackArgs;
             ctx.paramCount = paramCount;
 
-            pluginData.pCallbackEntry(pService, probeId, ctx, callerInfo);
+            pluginData.pCallbackEntry(pService, probeId, ctx, ptlsData->getCallerInfo());
         }
     }
     TraceSystemApi->ExitProbe();
@@ -181,21 +182,23 @@ pStackArgs: Pointer to stack area containing the rest of the arguments, if any
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64 *pArgs, ULONG32 pArgSize, void* pStackArgs)
 {
     // this is because TLS routines can allocate, could be changed. But this is simplest.
+    // stack walk also requires <= dispatch
     if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
         return;
     }
 
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
-        CallerInfo callerInfo;
-        if (pluginData.isLoaded() && pluginData.pCallbackReturn && pluginData.pIsTarget && pluginData.pIsTarget(callerInfo)) {
+        TLSData* ptlsData = TraceSystemApi->getRawTLSData();
+
+        if (pluginData.isLoaded() && pluginData.pCallbackReturn && pluginData.pIsTarget && pluginData.pIsTarget(ptlsData->getCallerInfo())) {
             MachineState ctx = { 0 };
             ctx.pRegArgs = pArgs;
             ctx.regArgsSize = pArgSize;
             ctx.pStackArgs = (uint64_t*)pStackArgs;
             ctx.paramCount = paramCount;
 
-            pluginData.pCallbackReturn(pService, probeId, ctx, callerInfo);
+            pluginData.pCallbackReturn(pService, probeId, ctx, ptlsData->getCallerInfo());
         }
     }
 
@@ -213,6 +216,7 @@ b: TODO: what is b
 extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b)
 {
     // this is because TLS routines can allocate, could be changed. But this is simplest.
+    // stack walk also requires <= dispatch
     if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
         return;
     }

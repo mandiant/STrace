@@ -79,14 +79,14 @@ extern "C" NTKERNELAPI PVOID NTAPI PsGetProcessWow64Process(IN PEPROCESS Process
 extern "C" NTKERNELAPI PPEB NTAPI PsGetProcessPeb(IN PEPROCESS Process);
 
 #define MAX_PATH 260
-#define FRAME_DEPTH 10
+#define MAX_FRAME_DEPTH 50
 
 class CallerInfo
 {
 public:
 	struct StackFrame {
 		uint64_t frameaddress;
-		uint64_t modulebase;;
+		uint64_t modulebase;
 		char modulePath[MAX_PATH];
 	};
 
@@ -128,17 +128,16 @@ public:
 	}
 
 	__forceinline void CaptureStackTrace(uint32_t skipFrameCount = 0) {
-		uint64_t StackTraceData[FRAME_DEPTH] = { 0 };
+		uint64_t StackTraceData[MAX_FRAME_DEPTH] = { 0 };
 
 		// we forceinlined, so *this* frame should not exist, so we can skip nothing
-		const auto StackTraceFramesCount = KphCaptureStackBackTrace((ULONG)skipFrameCount, FRAME_DEPTH, (PVOID*)StackTraceData, 0);
+		const uint8_t StackTraceFramesCount = (uint8_t)KphCaptureStackBackTrace((ULONG)skipFrameCount, MAX_FRAME_DEPTH, (PVOID*)StackTraceData);
 
 		// trace done, alloc our copy
-		const auto frameArraySize = FRAME_DEPTH * sizeof(StackFrame);
-		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, frameArraySize, DRIVER_POOL_TAG);
+		frames = (StackFrame*)ExAllocatePoolWithTag(NonPagedPoolNx, StackTraceFramesCount * sizeof(StackFrame), DRIVER_POOL_TAG);
 		if (frames) {
-			frameDepth = FRAME_DEPTH;
-			memset(frames, 0, frameArraySize);
+			frameDepth = StackTraceFramesCount;
+			memset(frames, 0, StackTraceFramesCount * sizeof(StackFrame));
 		} else {
 			return;
 		}

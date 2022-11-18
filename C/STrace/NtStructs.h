@@ -220,8 +220,7 @@ typedef struct _ETW_NOTIFICATION_HEADER
 ULONG KphCaptureStackBackTrace(
     _In_ ULONG FramesToSkip,
     _In_ ULONG FramesToCapture,
-    _Out_writes_(FramesToCapture) PVOID* BackTrace,
-    _Out_opt_ PULONG BackTraceHash
+    _Out_writes_(FramesToCapture) PVOID* BackTrace
 );
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
