@@ -350,7 +350,6 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
         break;
     case PROBE_IDS::IdQueryInformationThread:
         NEW_SCOPE(
-            LogAntiDbg("Test", callerinfo);
             auto threadInfoClass = ctx.read_argument(1);
             auto threadInfoData = ctx.read_argument(2);
             auto threadInfoRetLen = ctx.read_argument(4);
