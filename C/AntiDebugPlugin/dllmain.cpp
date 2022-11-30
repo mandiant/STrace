@@ -526,7 +526,6 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                 case (uint64_t)PROCESSINFOCLASS::ProcessDebugFlags:
                     NEW_SCOPE(
                         LogAntiDbg("NtQueryInformationProcess ProcessDebugFlags", callerinfo);
-
                         DWORD newValue = 1;
                         g_Apis.pTraceAccessMemory(&newValue, processInfoData, sizeof(newValue), 1, false);
                     );
@@ -631,7 +630,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
             uint64_t objectInfoData = 0;
             uint64_t objectInfoRetLen = 0;
 
-            // return: true if debugobject zeroed
+            // return: false if read of object type info failed
             auto ZeroDbgObject = [&](uint64_t pObjInfo, OBJECT_TYPE_INFORMATION& typeInfo) {
                 if (g_Apis.pTraceAccessMemory(&typeInfo, (ULONG_PTR)pObjInfo, sizeof(typeInfo), 1, true)) {
                     wchar_t typeName[20] = { 0 };
@@ -640,12 +639,14 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
                         if (wcscmp(typeName, L"DebugObject") == 0) {
                             typeInfo.TotalNumberOfObjects = 0;
                             typeInfo.TotalNumberOfHandles = 0;
-                            return (bool)g_Apis.pTraceAccessMemory(&typeInfo, pObjInfo, sizeof(typeInfo), 1, false);
+                            g_Apis.pTraceAccessMemory(&typeInfo, pObjInfo, sizeof(typeInfo), 1, false);
                         }
+                    } else {
+                        // read failed, must notify so that loops walking objects can bail out
                         return false;
                     }
                 }
-                return false;
+                return true;
             };
 
             NTSTATUS status = ctx.read_return_value();
@@ -663,20 +664,20 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 
                 switch (objectInfoClass) {
                 case ObjectTypeInformation: {
-                    LogAntiDbg("NtQueryObject ObjectTypeInformation, count DebugObjects", callerinfo);
+                    LogAntiDbg("NtQueryObject ObjectTypeInformation, might be counting DebugObjects", callerinfo);
                     OBJECT_TYPE_INFORMATION typeInfo = { 0 };
                     ZeroDbgObject(objectInfoData, typeInfo);
                     break;
                 }
                 case ObjectTypesInformation: {
+                    LogAntiDbg("NtQueryObject ObjectTypesInformation, might be counting DebugObjects", callerinfo);
                     OBJECT_ALL_INFORMATION objectAllInfo = { 0 };
                     if (g_Apis.pTraceAccessMemory(&objectAllInfo, objectInfoData, sizeof(objectAllInfo), 1, true)) {
                         uint32_t numberOfObjects = objectAllInfo.NumberOfObjects;
                         char* pObjInfoLocation = (char*)objectAllInfo.ObjectTypeInformation;
                         for (uint32_t i = 0; i < numberOfObjects; i++) {
                             OBJECT_TYPE_INFORMATION typeInfo = { 0 };
-                            if (ZeroDbgObject((uint64_t)pObjInfoLocation, typeInfo)) {
-                                LogAntiDbg("NtQueryObject ObjectTypesInformation, count DebugObjects", callerinfo);
+                            if (!ZeroDbgObject((uint64_t)pObjInfoLocation, typeInfo)) {
                                 break;
                             }
 
