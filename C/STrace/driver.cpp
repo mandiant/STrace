@@ -186,7 +186,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
     if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
         return;
     }
-
+    
     TraceSystemApi->EnterProbe();
     if (!TraceSystemApi->isCallFromInsideProbe()) {
         TLSData* ptlsData = TraceSystemApi->getRawTLSData();

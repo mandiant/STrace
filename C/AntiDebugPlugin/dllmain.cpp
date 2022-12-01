@@ -127,6 +127,7 @@ extern "C" __declspec(dllexport) void StpInitialize(PluginApis& pApis) {
     g_Apis.pSetCallback("QuerySystemInformation", PROBE_IDS::IdQuerySystemInformation);
     g_Apis.pSetCallback("OpenProcess", PROBE_IDS::IdOpenProcess);
     g_Apis.pSetCallback("SystemDebugControl", PROBE_IDS::IdSystemDebugControl);
+    g_Apis.pSetCallback("YieldExecution", PROBE_IDS::IdYieldExecution);
 
     NTSTATUS status = PsCreateSystemThread(&g_hGlobalPollThrd,(ACCESS_MASK)0,NULL,(HANDLE)0,NULL,GlobalPollThread,NULL);
 
@@ -234,12 +235,12 @@ allocated if the case is taken. This basically is a technique to declare a globa
 #define NEW_SCOPE(code) [&]() DECLSPEC_NOINLINE { code }()
 
 // no change to retval
-DECLSPEC_NOINLINE void noop() {
+DECLSPEC_NOINLINE void NTAPI noop() {
     volatile uint64_t noop = 0x1337;
 }
 
 // Do same checks as original, but otherwise nothing except say ok
-DECLSPEC_NOINLINE NTSTATUS NoopNtSetInformationThread(
+DECLSPEC_NOINLINE NTSTATUS NTAPI NoopNtSetInformationThread(
     HANDLE ThreadHandle,
     THREADINFOCLASS ThreadInformationClass,
     PVOID ThreadInformation,
@@ -290,7 +291,7 @@ DECLSPEC_NOINLINE NTSTATUS NoopNtSetInformationThread(
     return STATUS_SUCCESS;
 }
 
-DECLSPEC_NOINLINE NTSTATUS noop_openprocess_accessdenied(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+DECLSPEC_NOINLINE NTSTATUS NTAPI noop_openprocess_accessdenied(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
     if (ProcessHandle) {
         HANDLE newValue = 0;
         g_Apis.pTraceAccessMemory(&newValue, (ULONG_PTR)ProcessHandle, sizeof(newValue), 1, false);
@@ -311,6 +312,10 @@ DECLSPEC_NOINLINE NTSTATUS NTAPI NoopNtSystemDebugControl(
 
     // SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode). Force this to always look like it failed.
     return STATUS_ACCESS_DENIED;
+}
+
+DECLSPEC_NOINLINE NTSTATUS NTAPI NoopNtYieldExecutionFail() {
+    return STATUS_NO_YIELD_PERFORMED;
 }
 
 void LogAntiDbg(const char* Msg, CallerInfo& callerinfo) {
@@ -481,6 +486,10 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
     case PROBE_IDS::IdSystemDebugControl:
         LogAntiDbg("NtSystemDebugControl", callerinfo);
         ctx.redirect_syscall((uint64_t)&NoopNtSystemDebugControl);
+        break;
+    case PROBE_IDS::IdYieldExecution:
+        LogAntiDbg("NtYieldExecution", callerinfo);
+        ctx.redirect_syscall((uint64_t)&NoopNtYieldExecutionFail);
         break;
     default:
         break;

@@ -536,6 +536,25 @@ enum class VIRTUAL_MEMORY_INFORMATION_CLASS
     MaxVmInfoClass
 };
 
+enum class MEMORY_INFORMATION_CLASS
+{
+    MemoryBasicInformation, // MEMORY_BASIC_INFORMATION
+    MemoryWorkingSetInformation, // MEMORY_WORKING_SET_INFORMATION
+    MemoryMappedFilenameInformation, // UNICODE_STRING
+    MemoryRegionInformation, // MEMORY_REGION_INFORMATION
+    MemoryWorkingSetExInformation, // MEMORY_WORKING_SET_EX_INFORMATION // since VISTA
+    MemorySharedCommitInformation, // MEMORY_SHARED_COMMIT_INFORMATION // since WIN8
+    MemoryImageInformation, // MEMORY_IMAGE_INFORMATION
+    MemoryRegionInformationEx, // MEMORY_REGION_INFORMATION
+    MemoryPrivilegedBasicInformation,
+    MemoryEnclaveImageInformation, // MEMORY_ENCLAVE_IMAGE_INFORMATION // since REDSTONE3
+    MemoryBasicInformationCapped, // 10
+    MemoryPhysicalContiguityInformation, // MEMORY_PHYSICAL_CONTIGUITY_INFORMATION // since 20H1
+    MemoryBadInformation, // since WIN11
+    MemoryBadInformationAllProcesses, // since 22H1
+    MaxMemoryInfoClass
+};
+
 enum class PROCESSINFOCLASS : UINT32
 {
     ProcessBasicInformation, // q: PROCESS_BASIC_INFORMATION, PROCESS_EXTENDED_BASIC_INFORMATION

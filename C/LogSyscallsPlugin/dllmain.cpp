@@ -980,7 +980,7 @@ void LiveKernelDump(LiveKernelDumpFlags flags)
 }
 
 extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
-	if (strcmp(callerinfo.processName, "a.exe") == 0) {
+	if (strcmp(callerinfo.processName, "BasicHello.exe") == 0) {
 		return true;
 	}
 	return false;
@@ -1017,6 +1017,11 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 	for (uint64_t type_id : argTypes) {
 		uint64_t argValue = ctx.read_argument(argIdx);
 		switch (type_id) {
+		case get_type_id<MY_MEMORY_INFORMATION_CLASS>():
+			PRINTER(
+				string_printf(argsString, sprintf_tmp_buf, "%d - MEM_INFO: %s %d", argIdx, get_enum_value_name<MEMORY_INFORMATION_CLASS>(argValue), argValue);
+			);
+			break;
 		case get_type_id<MY_BOOLEAN>(): 
 			PRINTER(
 				string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN: %s", argIdx, argValue ? "TRUE" : "FALSE");

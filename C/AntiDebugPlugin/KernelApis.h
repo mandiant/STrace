@@ -99,6 +99,7 @@ typedef CCHAR KPROCESSOR_MODE;
 #define OBJ_VALID_ATTRIBUTES                0x00001FF2L
 
 #define STATUS_END_OF_FILE               ((NTSTATUS)0xC0000011L)
+#define STATUS_NO_YIELD_PERFORMED        ((NTSTATUS)0x40000024L)
 
 #define InitializeObjectAttributes( p, n, a, r, s ) { \
     (p)->Length = sizeof( OBJECT_ATTRIBUTES );          \
