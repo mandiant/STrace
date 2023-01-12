@@ -100,6 +100,7 @@ PEVENT_TRACE_PROPERTIES_V2 AllocEventProperties()
         return NULL;
     }
 
+    memset(eventProperties, 0, eventPropertiesSize);
     eventProperties->Wnode.BufferSize = 0xB0;
     eventProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
     eventProperties->Wnode.Guid = ETW_SESSION_GUID;
