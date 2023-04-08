@@ -38,6 +38,7 @@ public:
 typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
 typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
+typedef NTSTATUS(*tLogEtwEventApi)(const char* providerName, const GUID* providerGuid, const char* eventName, int eventLevel, uint64_t flag, const char* field1Name, const char* field1Type, int field1Value /* TODO: varArgs */);
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
@@ -48,13 +49,14 @@ typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress,
 class PluginApis {
 public:
 	PluginApis() = default;
-	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tSetCallbackApi setCallback, tUnSetCallbackApi unsetCallback, 
-		tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback, tTraceAccessMemory accessMemory,
-		tSetTlsData setTlsData, tGetTlsData getTlsData) {
+	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tLogEtwEventApi logEtwEvent, tSetCallbackApi setCallback,
+		tUnSetCallbackApi unsetCallback, tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback,
+		tTraceAccessMemory accessMemory, tSetTlsData setTlsData, tGetTlsData getTlsData) {
 
 		pSetTlsData = setTlsData;
 		pGetTlsData = getTlsData;
 		pLogPrint = print;
+		pLogEtwEvent = logEtwEvent;
 		pSetCallback = setCallback;
 		pUnsetCallback = unsetCallback;
 		pEtwSetCallback = etwSetCallback;
@@ -66,6 +68,7 @@ public:
 	tSetTlsData pSetTlsData;
 	tGetTlsData pGetTlsData;
 	tLogPrintApi pLogPrint;
+	tLogEtwEventApi pLogEtwEvent;
 	tSetCallbackApi pSetCallback;
 	tUnSetCallbackApi pUnsetCallback;
 	tSetEtwCallbackApi pEtwSetCallback;

@@ -37,6 +37,9 @@
     <ClCompile Include="NtStructs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EtwLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DynamicTrace.h">
@@ -64,6 +67,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Etw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EtwLogger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
