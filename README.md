@@ -35,7 +35,15 @@ Build the driver and cli, move the files to the same folder as the script, then 
 ./install_as_admin.ps1
 ```
 
-Reboot, then select the STrace boot entry, click F8 and boot with DSE disabled. After successful boot, the CLI can be used to load and unload plugin DLLs to begin tracing. Two example plugins are provided. Read the details below in detail if you run into issues.
+Reboot, then select the STrace boot entry, and press F8 (not enter!) on this screen:
+
+![f8](https://github.com/mandiant/STrace/assets/6619205/a68796de-7392-481a-b19a-74fcd8d18de9)
+
+That should bring up this screen, select boot with DSE disabled:
+
+![DSE](https://github.com/mandiant/STrace/assets/6619205/bc9b2103-717a-4df1-8c6a-a001db1c75fc)
+
+After successful boot, the CLI can be used to load and unload plugin DLLs to begin tracing. Two example plugins are provided. Read the details below in detail if you run into issues. You may need to reboot again the first time, and potentially manually enable the `STrace` service to autostart at boot using a tool such as process hacker. 
 
 ## Installation Details
 The original DTrace installation is here: https://techcommunity.microsoft.com/t5/windows-kernel-internals/dtrace-on-windows-20h1-updates/ba-p/1127929. The original DTrace requires Secure Boot and Virtualized Based Security to be configured, this is not the case with STrace as it doesn't implement the probe types (FBT) that require those features.
