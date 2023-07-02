@@ -13,6 +13,15 @@ LogEtwEvent(
 	/* TODO: varArgs */
 )
 {
+	UNREFERENCED_PARAMETER(providerName);
+	UNREFERENCED_PARAMETER(providerGuid);
+	UNREFERENCED_PARAMETER(eventName);
+	UNREFERENCED_PARAMETER(eventLevel);
+	UNREFERENCED_PARAMETER(flag);
+	UNREFERENCED_PARAMETER(field1Name);
+	UNREFERENCED_PARAMETER(field1Type);
+	UNREFERENCED_PARAMETER(field1Value);
+
 	// TODO - EventRegister goes here?
 	return 0;
 }

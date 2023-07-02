@@ -1,7 +1,5 @@
 #pragma once
-#include <stdint.h>
-
-#include <ntdef.h>
+#include "Interface.h"
 
 NTSTATUS
 LogEtwEvent(
