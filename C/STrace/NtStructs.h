@@ -504,6 +504,13 @@ extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwTraceControl(
     ULONG * ReturnSize
 );
 
+extern "C" NTSYSCALLAPI NTSTATUS NTAPI ZwTraceEvent(
+    HANDLE TraceHandle,
+    ULONG Flags,
+    ULONG FieldSize,
+    PVOID Fields
+);
+
 template<typename T>
 NTSTATUS KphEnumerateSystemModules(T callback){
     NTSTATUS status;

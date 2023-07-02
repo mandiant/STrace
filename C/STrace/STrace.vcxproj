@@ -130,7 +130,6 @@
     <ClCompile Include="Driver.cpp" />
     <ClCompile Include="DynamicTrace.cpp" />
     <ClCompile Include="Etw.cpp" />
-    <ClCompile Include="EtwLogger.cpp" />
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="ManualMap.cpp" />
     <ClCompile Include="NtStructs.cpp" />
