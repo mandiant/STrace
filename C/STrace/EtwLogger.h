@@ -4,27 +4,24 @@
 namespace detail
 {
 
-struct FieldsCollection {};
-
-template<const char* FieldName, int FieldType, typename FieldValue, typename... Rest>
-NTSTATUS EtwTracePropertyRecursive(OUT FieldsCollection& fields, const char* fieldName, int fieldType, FieldValue fieldValue, Rest... rest)
+NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
 {
-	// use fieldName, fieldType and fieldValue to add to fields
-	// in userspace this would use an EVENT_DATA_DESCRIPTOR and EventDataDescCreate
 	UNREFERENCED_PARAMETER(fields);
-	UNREFERENCED_PARAMETER(fieldName);
-	UNREFERENCED_PARAMETER(fieldType);
-	UNREFERENCED_PARAMETER(fieldValue);
-
-	// Add the next triplet of name, type and value to the event fields.
-	return EtwTracePropertyRecursive(fields, rest...);
+	UNREFERENCED_PARAMETER(current);
+	return STATUS_SUCCESS;
 }
 
-template<>
-NTSTATUS EtwTracePropertyRecursive(OUT FieldsCollection& fields)
+template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
+NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
 {
-	UNREFERENCED_PARAMETER(fields);
-	return STATUS_SUCCESS;
+	// use fieldName, fieldType and fieldValue to add to fields
+	UNREFERENCED_PARAMETER(fieldName);
+	UNREFERENCED_PARAMETER(fieldType);
+
+	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
+
+	// Add the next triplet of name, type and value to the event fields.
+	return EtwTracePropertyRecursive(fields, current + 1, rest...);
 }
 
 }  // namespace detail
@@ -41,7 +38,6 @@ NTSTATUS EtwTrace(
 {
 	UNREFERENCED_PARAMETER(providerName);
 	UNREFERENCED_PARAMETER(eventName);
-	UNREFERENCED_PARAMETER(eventLevel);
 	UNREFERENCED_PARAMETER(flag);
 
 	// Register the kernel-mode ETW provider.
@@ -52,15 +48,34 @@ NTSTATUS EtwTrace(
 		return status;
 	}
 
+	// Set the name and other metadata about the provider.
+	// EtwSetInformation()
+
 	// Create the collection of parameters.
-	detail::FieldsCollection fields;
-	status = detail::EtwTracePropertyRecursive(OUT fields, args...);
+	const auto numberOfFields = sizeof...(Arguments) / 3;
+	const auto allocSize = numberOfFields * sizeof(EVENT_DATA_DESCRIPTOR);
+	const auto fields = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
+	status = detail::EtwTracePropertyRecursive(OUT fields, 0, args...);
 	if (status != STATUS_SUCCESS)
 	{
-		return status;
+		goto error;
 	}
 
+	// Create the event descriptor.
+	EVENT_DESCRIPTOR desc;
+	desc.Level = (UCHAR)(eventLevel & 0xFF);
+
 	// Write the event.
-	// <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/etw/traceapi/event/index.htm>
-	return ZwTraceEvent((HANDLE)regHandle,  0/* flags */, 0/* fieldSize, */, NULL/* fields */);
+	status = EtwWrite(regHandle, &desc, NULL, numberOfFields, fields);
+	if (status != STATUS_SUCCESS)
+	{
+		goto error;
+	}
+
+error:
+	// Unregister the kernel-mode ETW provider.
+	EtwUnregister(regHandle);
+
+	ExFreePool(fields);
+	return status;
 }
