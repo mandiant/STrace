@@ -4,7 +4,7 @@
 namespace detail
 {
 
-NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
+NTSTATUS EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
 {
 	UNREFERENCED_PARAMETER(fields);
 	UNREFERENCED_PARAMETER(current);
@@ -12,7 +12,7 @@ NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int curre
 }
 
 template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
+NTSTATUS EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
 {
 	// use fieldName, fieldType and fieldValue to add to fields
 	UNREFERENCED_PARAMETER(fieldName);
@@ -21,8 +21,14 @@ NTSTATUS EtwTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int curre
 	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
 
 	// Add the next triplet of name, type and value to the event fields.
-	return EtwTracePropertyRecursive(fields, current + 1, rest...);
+	return EtwCreateTracePropertyRecursive(fields, current + 1, rest...);
 }
+
+struct ProviderMetadata
+{
+	uint16_t TotalLength;
+	char ProviderName[ANYSIZE_ARRAY];
+};
 
 }  // namespace detail
 
@@ -36,12 +42,16 @@ NTSTATUS EtwTrace(
 	Arguments... args
 )
 {
-	UNREFERENCED_PARAMETER(providerName);
 	UNREFERENCED_PARAMETER(eventName);
 	UNREFERENCED_PARAMETER(flag);
 
+	// It is unsafe to call EtwRegister() at higher than PASSIVE_LEVEL
+	if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
+		return STATUS_NOT_IMPLEMENTED;
+	}
+
 	// Register the kernel-mode ETW provider.
-	REGHANDLE regHandle;
+	REGHANDLE regHandle = 0;
 	NTSTATUS status = EtwRegister(providerGuid, NULL, NULL, OUT &regHandle);
 	if (status != STATUS_SUCCESS)
 	{
@@ -49,13 +59,20 @@ NTSTATUS EtwTrace(
 	}
 
 	// Set the name and other metadata about the provider.
-	// EtwSetInformation()
+	EVENT_DATA_DESCRIPTOR providerMetadataDesc;
+	const auto providerMetadataLength = (uint16_t)(strlen(providerName) + sizeof(uint16_t));
+	const auto providerMetadata = (struct detail::ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, providerMetadataLength, 'wteO');
+	providerMetadata->TotalLength = providerMetadataLength;
+	strcpy(providerMetadata->ProviderName, providerName);
+	EventDataDescCreate(&providerMetadataDesc, providerMetadata, providerMetadata->TotalLength);
+	providerMetadataDesc.Type = 2;  // Descriptor contains provider metadata.
+	status = EtwSetInformation(regHandle, EventProviderSetTraits, providerMetadata, 1234);
 
 	// Create the collection of parameters.
 	const auto numberOfFields = sizeof...(Arguments) / 3;
 	const auto allocSize = numberOfFields * sizeof(EVENT_DATA_DESCRIPTOR);
 	const auto fields = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
-	status = detail::EtwTracePropertyRecursive(OUT fields, 0, args...);
+	status = detail::EtwCreateTracePropertyRecursive(OUT fields, 0, args...);
 	if (status != STATUS_SUCCESS)
 	{
 		goto error;
@@ -76,6 +93,7 @@ error:
 	// Unregister the kernel-mode ETW provider.
 	EtwUnregister(regHandle);
 
+	ExFreePool(providerMetadata);
 	ExFreePool(fields);
 	return status;
 }
