@@ -44,6 +44,21 @@ __declspec(noinline) NTSTATUS CreateProviderMetadata(REGHANDLE regHandle, const 
 	return status;
 }
 
+__declspec(noinline) void CreateEventMetadata(const char* eventName, OUT EVENT_DATA_DESCRIPTOR& eventMetadataDesc)
+{
+	// Create packaged event metadata structure.
+	// TODO: Add in field metadata, which comes after the name. Make a new structure for this.
+	const auto eventMetadataLength = (uint16_t)((strlen(eventName) + 1) + sizeof(uint16_t));
+	const auto eventMetadata = (struct detail::ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
+	RtlSecureZeroMemory(eventMetadata, eventMetadataLength);
+	eventMetadata->TotalLength = eventMetadataLength;
+	strcpy(eventMetadata->ProviderName, eventName);
+
+	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
+	EventDataDescCreate(&eventMetadataDesc, eventMetadata, eventMetadata->TotalLength);
+	eventMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_EVENT_METADATA;  // Descriptor contains event metadata.
+}
+
 __declspec(noinline) NTSTATUS EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
 {
 	UNREFERENCED_PARAMETER(fields);
@@ -76,7 +91,6 @@ NTSTATUS EtwTrace(
 	Arguments... args
 )
 {
-	UNREFERENCED_PARAMETER(eventName);
 	UNREFERENCED_PARAMETER(flag);
 
 	// It is unsafe to call EtwRegister() at higher than PASSIVE_LEVEL
@@ -101,15 +115,20 @@ NTSTATUS EtwTrace(
 		return status;
 	}
 
+	// Create the event metadata descriptor.
+	EVENT_DATA_DESCRIPTOR eventMetadataDesc;
+	detail::CreateEventMetadata(eventName, eventMetadataDesc);
+
 	// Create the collection of parameters, with additional space for the metadata
 	// descriptors at the front.
 	constexpr auto numberOfFields = sizeof...(Arguments) / 3;
-	constexpr auto numberOfDescriptors = numberOfFields + 1;
+	constexpr auto numberOfDescriptors = numberOfFields + 2;
 	constexpr auto allocSize = numberOfDescriptors * sizeof(EVENT_DATA_DESCRIPTOR);
 	const auto fields = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
 	RtlSecureZeroMemory(fields, allocSize);
 	memcpy(&fields[0], &providerMetadataDesc, sizeof(EVENT_DATA_DESCRIPTOR));
-	status = detail::EtwCreateTracePropertyRecursive(OUT fields, 1, args...);
+	memcpy(&fields[1], &eventMetadataDesc, sizeof(EVENT_DATA_DESCRIPTOR));
+	status = detail::EtwCreateTracePropertyRecursive(OUT fields, 2, args...);
 	if (status != STATUS_SUCCESS)
 	{
 		//EtwUnregister(regHandle);
