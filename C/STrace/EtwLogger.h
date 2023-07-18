@@ -10,6 +10,13 @@ struct ProviderMetadata
 	char ProviderName[ANYSIZE_ARRAY];
 };
 
+struct EventMetadata
+{
+	uint16_t TotalLength;
+	uint8_t Tag;
+	char EventName[ANYSIZE_ARRAY];
+};
+
 __declspec(noinline) NTSTATUS CreateProviderMetadata(REGHANDLE regHandle, const char* providerName, OUT EVENT_DATA_DESCRIPTOR& providerMetadataDesc)
 {
 	// Create packaged provider metadata structure.
@@ -47,12 +54,12 @@ __declspec(noinline) NTSTATUS CreateProviderMetadata(REGHANDLE regHandle, const 
 __declspec(noinline) void CreateEventMetadata(const char* eventName, OUT EVENT_DATA_DESCRIPTOR& eventMetadataDesc)
 {
 	// Create packaged event metadata structure.
-	// TODO: Add in field metadata, which comes after the name. Make a new structure for this.
-	const auto eventMetadataLength = (uint16_t)((strlen(eventName) + 1) + sizeof(uint16_t));
-	const auto eventMetadata = (struct detail::ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
+	// TODO: Add in field metadata, which comes after the name.
+	const auto eventMetadataLength = (uint16_t)((strlen(eventName) + 1) + sizeof(uint16_t) + 1);
+	const auto eventMetadata = (struct detail::EventMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
 	RtlSecureZeroMemory(eventMetadata, eventMetadataLength);
 	eventMetadata->TotalLength = eventMetadataLength;
-	strcpy(eventMetadata->ProviderName, eventName);
+	strcpy(eventMetadata->EventName, eventName);
 
 	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
 	EventDataDescCreate(&eventMetadataDesc, eventMetadata, eventMetadata->TotalLength);
