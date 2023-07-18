@@ -81,12 +81,10 @@ NTSTATUS EtwTrace(
 	const GUID* providerGuid,
 	const char* eventName,
 	int eventLevel,
-	uint64_t flag,
+	uint64_t keyword,
 	Arguments... args
 )
 {
-	UNREFERENCED_PARAMETER(flag);
-
 	// It is unsafe to call EtwRegister() at higher than PASSIVE_LEVEL
 	if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
 		return STATUS_NOT_IMPLEMENTED;
@@ -136,6 +134,7 @@ NTSTATUS EtwTrace(
 	// Create the event descriptor.
 	EVENT_DESCRIPTOR desc;
 	RtlSecureZeroMemory(&desc, sizeof(EVENT_DESCRIPTOR));
+	desc.Keyword = keyword;
 	desc.Level = (UCHAR)(eventLevel & 0xFF);
 
 	// Write the event.
