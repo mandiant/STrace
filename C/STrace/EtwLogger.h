@@ -17,7 +17,7 @@ struct EventMetadata
 	char EventName[ANYSIZE_ARRAY];
 };
 
-__declspec(noinline) NTSTATUS CreateProviderMetadata(REGHANDLE regHandle, const char* providerName, OUT EVENT_DATA_DESCRIPTOR& providerMetadataDesc)
+__declspec(noinline) EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* providerName)
 {
 	// Create packaged provider metadata structure.
 	// <https://learn.microsoft.com/en-us/windows/win32/etw/provider-traits>
@@ -28,30 +28,14 @@ __declspec(noinline) NTSTATUS CreateProviderMetadata(REGHANDLE regHandle, const 
 	strcpy(providerMetadata->ProviderName, providerName);
 
 	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
+	EVENT_DATA_DESCRIPTOR providerMetadataDesc;
 	EventDataDescCreate(&providerMetadataDesc, providerMetadata, providerMetadata->TotalLength);
 	providerMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_PROVIDER_METADATA;  // Descriptor contains provider metadata.
 
-	// Set the metadata on the provider.
-	const auto status = EtwSetInformation(regHandle, EventProviderSetTraits, providerMetadata, providerMetadata->TotalLength);
-
-	// TODO: De-allocate the original copy (???)
-	//ExFreePool(providerMetadata);
-
-	// Do we need to call EtwSetInformation at all? Or just stick the
-	// EVENT_DATA_DESCRIPTOR at the front of the list passed to EtwWriteEvent
-	// (along with another one for the event metadata?). DTrace source does have a
-	// call to the (userspace equivalent of) EtwSetInformation, but is it called?
-	// Whereas this file (<https://github.com/billti/cpp-etw/blob/master/etw-provider.h>)
-	// references the function but does not actually call it, and just sticks the
-	// descriptors in front of the write.
-	//
-	// Note that what is sent to EtwSetInformation is NOT a data descriptor, it's
-	// the plain format.
-
-	return status;
+	return providerMetadataDesc;
 }
 
-__declspec(noinline) void CreateEventMetadata(const char* eventName, OUT EVENT_DATA_DESCRIPTOR& eventMetadataDesc)
+__declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* eventName)
 {
 	// Create packaged event metadata structure.
 	// TODO: Add in field metadata, which comes after the name.
@@ -62,8 +46,11 @@ __declspec(noinline) void CreateEventMetadata(const char* eventName, OUT EVENT_D
 	strcpy(eventMetadata->EventName, eventName);
 
 	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
+	EVENT_DATA_DESCRIPTOR eventMetadataDesc;
 	EventDataDescCreate(&eventMetadataDesc, eventMetadata, eventMetadata->TotalLength);
 	eventMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_EVENT_METADATA;  // Descriptor contains event metadata.
+
+	return eventMetadataDesc;
 }
 
 __declspec(noinline) NTSTATUS EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
@@ -113,18 +100,19 @@ NTSTATUS EtwTrace(
 		return status;
 	}
 
-	// Set the name and other metadata about the provider.
-	EVENT_DATA_DESCRIPTOR providerMetadataDesc;
-	status = detail::CreateProviderMetadata(regHandle, providerName, OUT providerMetadataDesc);
+	// Create the provider metadata descriptor, and tell the provider to use the
+	// metadata given by the descriptor.
+	const auto providerMetadataDesc = detail::CreateProviderMetadata(providerName);
+	status = EtwSetInformation(regHandle, EventProviderSetTraits, (PVOID)providerMetadataDesc.Ptr, providerMetadataDesc.Size);
 	if (status != STATUS_SUCCESS)
 	{
-		//EtwUnregister(regHandle);
+		EtwUnregister(regHandle);
+		ExFreePool((PVOID)providerMetadataDesc.Ptr);
 		return status;
 	}
 
 	// Create the event metadata descriptor.
-	EVENT_DATA_DESCRIPTOR eventMetadataDesc;
-	detail::CreateEventMetadata(eventName, eventMetadataDesc);
+	const auto eventMetadataDesc = detail::CreateEventMetadata(eventName);
 
 	// Create the collection of parameters, with additional space for the metadata
 	// descriptors at the front.
@@ -138,7 +126,9 @@ NTSTATUS EtwTrace(
 	status = detail::EtwCreateTracePropertyRecursive(OUT fields, 2, args...);
 	if (status != STATUS_SUCCESS)
 	{
-		//EtwUnregister(regHandle);
+		EtwUnregister(regHandle);
+		ExFreePool((PVOID)providerMetadataDesc.Ptr);
+		ExFreePool((PVOID)eventMetadataDesc.Ptr);
 		ExFreePool(fields);
 		return status;
 	}
@@ -150,14 +140,10 @@ NTSTATUS EtwTrace(
 
 	// Write the event.
 	status = EtwWrite(regHandle, &desc, NULL, numberOfDescriptors, fields);
-	if (status != STATUS_SUCCESS)
-	{
-		//EtwUnregister(regHandle);
-		ExFreePool(fields);
-		return status;
-	}
 
-	//TODO: EtwUnregister(regHandle);
+	EtwUnregister(regHandle);
+	ExFreePool((PVOID)providerMetadataDesc.Ptr);
+	ExFreePool((PVOID)eventMetadataDesc.Ptr);
 	ExFreePool(fields);
 
 	return status;
