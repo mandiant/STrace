@@ -39,7 +39,7 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 {
 	// Create packaged event metadata structure.
 	// TODO: Add in field metadata, which comes after the name.
-	const auto eventMetadataLength = (uint16_t)((strlen(eventName) + 1) + sizeof(uint16_t) + 1);
+	const auto eventMetadataLength = (uint16_t)((strlen(eventName) + 1) + sizeof(uint16_t) + sizeof(uint8_t));
 	const auto eventMetadata = (struct detail::EventMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
 	RtlSecureZeroMemory(eventMetadata, eventMetadataLength);
 	eventMetadata->TotalLength = eventMetadataLength;
