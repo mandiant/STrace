@@ -41,7 +41,7 @@ size_t SizeOfFieldsMeta()
 }
 
 template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-size_t SizeOfFieldsMeta(FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
+size_t SizeOfFieldsMeta(FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	UNREFERENCED_PARAMETER(fieldType);
 	UNREFERENCED_PARAMETER(fieldValue);
@@ -54,7 +54,7 @@ void SetFieldMetadata(uint8_t* current)
 }
 
 template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-void SetFieldMetadata(uint8_t* current, FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
+void SetFieldMetadata(uint8_t* current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	UNREFERENCED_PARAMETER(fieldValue);
 
@@ -107,7 +107,7 @@ __declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIP
 }
 
 template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-__declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue fieldValue, Rest... rest)
+__declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	// fieldName and fieldType are used in the event metadata descriptor.
 	UNREFERENCED_PARAMETER(fieldName);
