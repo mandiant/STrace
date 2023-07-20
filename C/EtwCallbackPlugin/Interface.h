@@ -62,7 +62,7 @@ typedef LONG NTSTATUS;
 typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
 typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
-typedef NTSTATUS(*tEtwTraceApi)(const char* providerName, const GUID* providerGuid, const char* eventName, int eventLevel, uint64_t flag, const char* field1Name, int field1Type, int field1Value /* TODO: varArgs */);
+typedef NTSTATUS(*tEtwTraceApi)(const char* providerName, const GUID* providerGuid, const char* eventName, uint8_t eventLevel, uint64_t keyword, const char* field1Name, int field1Type, int field1Value /* TODO: varArgs */);
 
 /*
 template<typename... Arguments>
