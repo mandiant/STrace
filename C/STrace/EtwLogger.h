@@ -111,81 +111,91 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 }
 
 // final recursion case, string-specific overload
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, const char* fieldValue)
+__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue)
 {
+	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
 	UNREFERENCED_PARAMETER(fieldType);
 
+	// Copy the input value to its own space.
+	const auto newSpace = (char*)ExAllocatePoolWithTag(NonPagedPoolNx, strlen(fieldValue) + 1, 'wteE');
+	if (newSpace == NULL)
+	{
+		return STATUS_UNSUCCESSFUL;
+	}
+	strcpy(newSpace, fieldValue);
+
 	// Create the event data descriptor pointing to the value of the field.
-	EventDataDescCreate(OUT &fields[current], fieldValue, (ULONG)strlen(fieldValue) + 1);
+	EventDataDescCreate(OUT propertyDataDescriptors, newSpace, (ULONG)(strlen(fieldValue) + 1));
+
+	return STATUS_SUCCESS;
 }
 
 // final recursion case
 template<typename FieldValue>
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, FieldValue& fieldValue)
+__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue)
 {
+	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
 	UNREFERENCED_PARAMETER(fieldType);
 
+	// Copy the input value to its own space.
+	const auto newSpace = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(FieldValue), 'wteE');
+	if (newSpace == NULL)
+	{
+		return STATUS_UNSUCCESSFUL;
+	}
+	memcpy(newSpace, &fieldValue, sizeof(FieldValue));
+
 	// Create the event data descriptor pointing to the value of the field.
-	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
+	EventDataDescCreate(OUT propertyDataDescriptors, newSpace, sizeof(FieldValue));
+
+	return STATUS_SUCCESS;
 }
 
 // string-specific overload
 template<typename... Rest>
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, const char* fieldValue, Rest... rest)
+__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue, Rest... rest)
 {
-	// fieldName and fieldType are used in the event metadata descriptor.
+	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
 	UNREFERENCED_PARAMETER(fieldType);
 
-	// Create the event data descriptor pointing to the value of the field.
-	EventDataDescCreate(OUT &fields[current], fieldValue, (ULONG)strlen(fieldValue) + 1);
+	// Copy the input value to its own space.
+	const auto newSpace = (char*)ExAllocatePoolWithTag(NonPagedPoolNx, strlen(fieldValue) + 1, 'wteE');
+	if (newSpace == NULL)
+	{
+		return STATUS_UNSUCCESSFUL;
+	}
+	strcpy(newSpace, fieldValue);
 
-	// Add the next triplet of name, type and value to the event fields.
-	CreateTracePropertyRecursive(fields, current + 1, rest...);
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT propertyDataDescriptors, newSpace, (ULONG)(strlen(fieldValue) + 1));
+
+	// Create the next descriptor with the next field value.
+	return CreateTracePropertyRecursive(++propertyDataDescriptors, rest...);
 }
 
 template<typename FieldValue, typename... Rest>
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
+__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
 {
-	// fieldName and fieldType are used in the event metadata descriptor.
+	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
 	UNREFERENCED_PARAMETER(fieldType);
 
-	// Create the event data descriptor pointing to the value of the field.
-	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
-
-	// Add the next triplet of name, type and value to the event fields.
-	CreateTracePropertyRecursive(fields, current + 1, rest...);
-}
-
-template<typename... Arguments>
-__declspec(noinline) PEVENT_DATA_DESCRIPTOR CreatePropertyDataDescriptors(
-	EVENT_DATA_DESCRIPTOR providerMetadata,
-	EVENT_DATA_DESCRIPTOR eventMetadata,
-	Arguments... args)
-{
-	// Create the collection of parameters, with additional space for the metadata
-	// descriptors at the front.
-	constexpr auto numberOfFields = sizeof...(Arguments) / 3;
-	constexpr auto numberOfDescriptors = numberOfFields + 2;
-	constexpr auto allocSize = numberOfDescriptors * sizeof(EVENT_DATA_DESCRIPTOR);
-	const auto fields = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
-	if (fields == NULL)
+	// Copy the input value to its own space.
+	const auto newSpace = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(FieldValue), 'wteE');
+	if (newSpace == NULL)
 	{
-		return NULL;
+		return STATUS_UNSUCCESSFUL;
 	}
-	RtlSecureZeroMemory(fields, allocSize);
+	memcpy(newSpace, &fieldValue, sizeof(FieldValue));
 
-	// Copy the metadata descriptors to the start of the descriptor array.
-	memcpy(&fields[0], &providerMetadata, sizeof(EVENT_DATA_DESCRIPTOR));
-	memcpy(&fields[1], &eventMetadata, sizeof(EVENT_DATA_DESCRIPTOR));
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT propertyDataDescriptors, newSpace, sizeof(FieldValue));
 
-	// Create an event data descriptor for each property.
-	CreateTracePropertyRecursive(OUT fields, 2, args...);
-
-	return fields;
+	// Create the next descriptor with the next field value.
+	return CreateTracePropertyRecursive(++propertyDataDescriptors, rest...);
 }
 
 EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
@@ -199,25 +209,23 @@ EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
 	return desc;
 }
 
-void Cleanup(REGHANDLE regHandle = 0, PVOID providerMetadata = NULL, PVOID eventMetadata = NULL, PVOID eventDescriptors = NULL)
+void Cleanup(REGHANDLE regHandle = 0, PEVENT_DATA_DESCRIPTOR eventDescriptors = NULL, int numberOfDescriptors = 0)
 {
 	if (regHandle != 0)
 	{
 		EtwUnregister(regHandle);
 	}
 
-	if (providerMetadata != NULL)
-	{
-		ExFreePool(providerMetadata);
-	}
-
-	if (eventMetadata != NULL)
-	{
-		ExFreePool(eventMetadata);
-	}
-
 	if (eventDescriptors != NULL)
 	{
+		for (int i = 0; i < numberOfDescriptors; i++)
+		{
+			if (eventDescriptors[i].Ptr != NULL)
+			{
+				ExFreePool((PVOID)eventDescriptors[i].Ptr);
+			}
+		}
+
 		ExFreePool(eventDescriptors);
 	}
 }
@@ -248,49 +256,59 @@ NTSTATUS EtwTrace(
 		return status;
 	}
 
-	// Create the provider metadata descriptor, and tell the provider to use the
-	// metadata given by the descriptor.
-	const auto providerMetadataDesc = detail::CreateProviderMetadata(providerName);
-	if (providerMetadataDesc.Ptr == NULL)
+	// Allocate space for the data descriptors, including two additional slots
+	// for provider and event metadata.
+	constexpr auto numberOfFields = sizeof...(Arguments) / 3;
+	constexpr auto numberOfDescriptors = numberOfFields + 2;
+	constexpr auto allocSize = numberOfDescriptors * sizeof(EVENT_DATA_DESCRIPTOR);
+	const auto dataDescriptors = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
+	if (dataDescriptors == NULL)
 	{
 		detail::Cleanup(regHandle);
 		return STATUS_UNSUCCESSFUL;
 	}
+	RtlSecureZeroMemory(dataDescriptors, allocSize);
 
-	status = EtwSetInformation(regHandle, EventProviderSetTraits, (PVOID)providerMetadataDesc.Ptr, providerMetadataDesc.Size);
+	// Create the provider metadata descriptor, and tell the provider to use the
+	// metadata given by the descriptor.
+	dataDescriptors[0] = detail::CreateProviderMetadata(providerName);
+	if (dataDescriptors[0].Ptr == NULL)
+	{
+		detail::Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	status = EtwSetInformation(regHandle, EventProviderSetTraits, (PVOID)dataDescriptors[0].Ptr, dataDescriptors[0].Size);
 	if (status != STATUS_SUCCESS)
 	{
-		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr);
+		detail::Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
 		return status;
 	}
 
 	// Create the event metadata descriptor.
-	const auto eventMetadataDesc = detail::CreateEventMetadata(eventName, args...);
-	if (eventMetadataDesc.Ptr == NULL)
+	dataDescriptors[1] = detail::CreateEventMetadata(eventName, args...);
+	if (dataDescriptors[1].Ptr == NULL)
 	{
-		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr);
+		detail::Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	// Create the main array of data descriptors, which starts with one for the
-	// provider metadata, then one for the event metadata, then one for each of
-	// the fields.
-	const auto dataDescriptors = detail::CreatePropertyDataDescriptors(providerMetadataDesc, eventMetadataDesc, args...);
-	if (dataDescriptors == NULL)
+	// Create a descriptor for each individual field.
+	status = detail::CreateTracePropertyRecursive(&dataDescriptors[2], args...);
+	if (status != STATUS_SUCCESS)
 	{
-		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr, (PVOID)eventMetadataDesc.Ptr);
-		return STATUS_UNSUCCESSFUL;
+		detail::Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
+		return status;
 	}
 
 	// Create the top-level event descriptor.
 	const auto eventDesc = detail::CreateEventDescriptor(keyword, eventLevel);
 
 	// Write the event.
-	constexpr auto numberOfDescriptors = (sizeof...(Arguments) / 3) + 2;
 	status = EtwWrite(regHandle, &eventDesc, NULL, numberOfDescriptors, dataDescriptors);
 
 	// Unregister the event and deallocate memory.
-	detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr, (PVOID)eventMetadataDesc.Ptr, dataDescriptors);
+	detail::Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
 
 	return status;
 }
