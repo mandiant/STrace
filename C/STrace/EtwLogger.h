@@ -17,7 +17,7 @@ struct EventMetadata
 	char EventName[ANYSIZE_ARRAY];
 };
 
-__declspec(noinline) EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* providerName)
+EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* providerName)
 {
 	// Create packaged provider metadata structure.
 	// <https://learn.microsoft.com/en-us/windows/win32/etw/provider-traits>
@@ -71,7 +71,7 @@ void SetFieldMetadata(uint8_t* current, const char* fieldName, int fieldType, Fi
 }
 
 template<typename... Arguments>
-__declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* eventName, Arguments... args)
+EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* eventName, Arguments... args)
 {
 	// Allocate the total size of the event metadata structure.
 	//
@@ -111,7 +111,7 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 }
 
 // final recursion case, string-specific overload
-__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue)
+NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue)
 {
 	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
@@ -133,7 +133,7 @@ __declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCR
 
 // final recursion case
 template<typename FieldValue>
-__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue)
+NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue)
 {
 	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
@@ -155,7 +155,7 @@ __declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCR
 
 // string-specific overload
 template<typename... Rest>
-__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue, Rest... rest)
+NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, const char* fieldValue, Rest... rest)
 {
 	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
@@ -177,7 +177,7 @@ __declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCR
 }
 
 template<typename FieldValue, typename... Rest>
-__declspec(noinline) NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
+NTSTATUS CreateTracePropertyRecursive(OUT PEVENT_DATA_DESCRIPTOR propertyDataDescriptors, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	// fieldName and fieldType are used in the event metadata descriptor, not here.
 	UNREFERENCED_PARAMETER(fieldName);
