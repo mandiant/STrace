@@ -17,6 +17,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LogSyscallsPlugin", "LogSys
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EtwCallbackPlugin", "EtwCallbackPlugin\EtwCallbackPlugin.vcxproj", "{3AC65894-4A8A-487A-BC59-5917B91E2169}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AddNewEtwEventPlugin", "AddNewEtwEventPlugin\AddNewEtwEventPlugin.vcxproj", "{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -69,6 +71,14 @@ Global
 		{3AC65894-4A8A-487A-BC59-5917B91E2169}.Release|x64.Build.0 = Release|x64
 		{3AC65894-4A8A-487A-BC59-5917B91E2169}.Release|x86.ActiveCfg = Release|Win32
 		{3AC65894-4A8A-487A-BC59-5917B91E2169}.Release|x86.Build.0 = Release|Win32
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Debug|x64.ActiveCfg = Debug|x64
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Debug|x64.Build.0 = Debug|x64
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Debug|x86.ActiveCfg = Debug|Win32
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Debug|x86.Build.0 = Debug|Win32
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Release|x64.ActiveCfg = Release|x64
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Release|x64.Build.0 = Release|x64
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Release|x86.ActiveCfg = Release|Win32
+		{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
