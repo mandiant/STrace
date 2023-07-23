@@ -45,8 +45,8 @@ size_t SizeOfFieldsMeta()
 	return 0;
 }
 
-template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-size_t SizeOfFieldsMeta(FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
+template<typename FieldValue, typename... Rest>
+size_t SizeOfFieldsMeta(const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	UNREFERENCED_PARAMETER(fieldType);
 	UNREFERENCED_PARAMETER(fieldValue);
@@ -58,8 +58,8 @@ void SetFieldMetadata(uint8_t* current)
 	UNREFERENCED_PARAMETER(current);
 }
 
-template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-void SetFieldMetadata(uint8_t* current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
+template<typename FieldValue, typename... Rest>
+void SetFieldMetadata(uint8_t* current, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	UNREFERENCED_PARAMETER(fieldValue);
 
@@ -110,14 +110,44 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 	return eventMetadataDesc;
 }
 
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
+// final recursion case, string-specific overload
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, const char* fieldValue)
 {
-	UNREFERENCED_PARAMETER(fields);
-	UNREFERENCED_PARAMETER(current);
+	UNREFERENCED_PARAMETER(fieldName);
+	UNREFERENCED_PARAMETER(fieldType);
+
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT &fields[current], fieldValue, (ULONG)strlen(fieldValue) + 1);
 }
 
-template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
+// final recursion case
+template<typename FieldValue>
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, FieldValue& fieldValue)
+{
+	UNREFERENCED_PARAMETER(fieldName);
+	UNREFERENCED_PARAMETER(fieldType);
+
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
+}
+
+// string-specific overload
+template<typename... Rest>
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, const char* fieldValue, Rest... rest)
+{
+	// fieldName and fieldType are used in the event metadata descriptor.
+	UNREFERENCED_PARAMETER(fieldName);
+	UNREFERENCED_PARAMETER(fieldType);
+
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT &fields[current], fieldValue, (ULONG)strlen(fieldValue) + 1);
+
+	// Add the next triplet of name, type and value to the event fields.
+	CreateTracePropertyRecursive(fields, current + 1, rest...);
+}
+
+template<typename FieldValue, typename... Rest>
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, const char* fieldName, int fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	// fieldName and fieldType are used in the event metadata descriptor.
 	UNREFERENCED_PARAMETER(fieldName);
@@ -125,21 +155,6 @@ __declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR
 
 	// Create the event data descriptor pointing to the value of the field.
 	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
-
-	// Add the next triplet of name, type and value to the event fields.
-	CreateTracePropertyRecursive(fields, current + 1, rest...);
-}
-
-// string-specific overload
-template<typename FieldName = const char*, typename FieldType = int, typename FieldValue = const char*, typename... Rest>
-__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, const char* fieldValue, Rest... rest)
-{
-	// fieldName and fieldType are used in the event metadata descriptor.
-	UNREFERENCED_PARAMETER(fieldName);
-	UNREFERENCED_PARAMETER(fieldType);
-
-	// Create the event data descriptor pointing to the value of the field.
-	EventDataDescCreate(OUT & fields[current], fieldValue, (ULONG)strlen(fieldValue));
 
 	// Add the next triplet of name, type and value to the event fields.
 	CreateTracePropertyRecursive(fields, current + 1, rest...);
