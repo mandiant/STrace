@@ -23,6 +23,11 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* pr
 	// <https://learn.microsoft.com/en-us/windows/win32/etw/provider-traits>
 	const auto providerMetadataLength = (uint16_t)((strlen(providerName) + 1) + sizeof(uint16_t));
 	const auto providerMetadata = (struct detail::ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, providerMetadataLength, 'wteO');
+	if (providerMetadata == NULL)
+	{
+		return EVENT_DATA_DESCRIPTOR{};
+	}
+
 	RtlSecureZeroMemory(providerMetadata, providerMetadataLength);
 	providerMetadata->TotalLength = providerMetadataLength;
 	strcpy(providerMetadata->ProviderName, providerName);
@@ -81,6 +86,11 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 	const auto eventMetadataHeaderLength = strlen(eventName) + 1 + sizeof(uint16_t) + sizeof(uint8_t);
 	const auto eventMetadataLength = (uint16_t)(eventMetadataHeaderLength + SizeOfFieldsMeta(args...));
 	const auto eventMetadata = (struct detail::EventMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
+	if (eventMetadata == NULL)
+	{
+		return EVENT_DATA_DESCRIPTOR{};
+	}
+
 	RtlSecureZeroMemory(eventMetadata, eventMetadataLength);
 
 	// Set the first three fields, metadata about the event.
@@ -100,14 +110,14 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 	return eventMetadataDesc;
 }
 
-__declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current)
 {
 	UNREFERENCED_PARAMETER(fields);
 	UNREFERENCED_PARAMETER(current);
 }
 
 template<typename FieldName = const char*, typename FieldType = int, typename FieldValue, typename... Rest>
-__declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, FieldValue& fieldValue, Rest... rest)
 {
 	// fieldName and fieldType are used in the event metadata descriptor.
 	UNREFERENCED_PARAMETER(fieldName);
@@ -117,10 +127,25 @@ __declspec(noinline) void EtwCreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIP
 	EventDataDescCreate(OUT &fields[current], &fieldValue, sizeof(FieldValue));
 
 	// Add the next triplet of name, type and value to the event fields.
-	EtwCreateTracePropertyRecursive(fields, current + 1, rest...);
+	CreateTracePropertyRecursive(fields, current + 1, rest...);
 }
 
-EVENT_DESCRIPTOR EtwCreateEventDescriptor(uint64_t keyword, uint8_t level)
+// string-specific overload
+template<typename FieldName = const char*, typename FieldType = int, typename FieldValue = const char*, typename... Rest>
+__declspec(noinline) void CreateTracePropertyRecursive(OUT EVENT_DATA_DESCRIPTOR fields[], int current, FieldName fieldName, FieldType fieldType, const char* fieldValue, Rest... rest)
+{
+	// fieldName and fieldType are used in the event metadata descriptor.
+	UNREFERENCED_PARAMETER(fieldName);
+	UNREFERENCED_PARAMETER(fieldType);
+
+	// Create the event data descriptor pointing to the value of the field.
+	EventDataDescCreate(OUT & fields[current], fieldValue, (ULONG)strlen(fieldValue));
+
+	// Add the next triplet of name, type and value to the event fields.
+	CreateTracePropertyRecursive(fields, current + 1, rest...);
+}
+
+EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
 {
 	EVENT_DESCRIPTOR desc;
 	RtlSecureZeroMemory(&desc, sizeof(EVENT_DESCRIPTOR));
@@ -129,6 +154,29 @@ EVENT_DESCRIPTOR EtwCreateEventDescriptor(uint64_t keyword, uint8_t level)
 	desc.Level = level;
 
 	return desc;
+}
+
+void Cleanup(REGHANDLE regHandle = 0, PVOID providerMetadata = NULL, PVOID eventMetadata = NULL, PVOID eventDescriptors = NULL)
+{
+	if (regHandle != 0)
+	{
+		EtwUnregister(regHandle);
+	}
+
+	if (providerMetadata != NULL)
+	{
+		ExFreePool(providerMetadata);
+	}
+
+	if (eventMetadata != NULL)
+	{
+		ExFreePool(eventMetadata);
+	}
+
+	if (eventDescriptors != NULL)
+	{
+		ExFreePool(eventDescriptors);
+	}
 }
 
 }  // namespace detail
@@ -144,7 +192,8 @@ NTSTATUS EtwTrace(
 )
 {
 	// It is unsafe to call EtwRegister() at higher than PASSIVE_LEVEL
-	if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
+	if (KeGetCurrentIrql() > PASSIVE_LEVEL)
+	{
 		return STATUS_NOT_IMPLEMENTED;
 	}
 
@@ -159,16 +208,26 @@ NTSTATUS EtwTrace(
 	// Create the provider metadata descriptor, and tell the provider to use the
 	// metadata given by the descriptor.
 	const auto providerMetadataDesc = detail::CreateProviderMetadata(providerName);
+	if (providerMetadataDesc.Ptr == NULL)
+	{
+		detail::Cleanup(regHandle);
+		return STATUS_UNSUCCESSFUL;
+	}
+
 	status = EtwSetInformation(regHandle, EventProviderSetTraits, (PVOID)providerMetadataDesc.Ptr, providerMetadataDesc.Size);
 	if (status != STATUS_SUCCESS)
 	{
-		EtwUnregister(regHandle);
-		ExFreePool((PVOID)providerMetadataDesc.Ptr);
+		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr);
 		return status;
 	}
 
 	// Create the event metadata descriptor.
 	const auto eventMetadataDesc = detail::CreateEventMetadata(eventName, args...);
+	if (eventMetadataDesc.Ptr == NULL)
+	{
+		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr);
+		return STATUS_UNSUCCESSFUL;
+	}
 
 	// Create the collection of parameters, with additional space for the metadata
 	// descriptors at the front.
@@ -176,6 +235,11 @@ NTSTATUS EtwTrace(
 	constexpr auto numberOfDescriptors = numberOfFields + 2;
 	constexpr auto allocSize = numberOfDescriptors * sizeof(EVENT_DATA_DESCRIPTOR);
 	const auto fields = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
+	if (fields == NULL)
+	{
+		detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr, (PVOID)eventMetadataDesc.Ptr);
+		return STATUS_UNSUCCESSFUL;
+	}
 	RtlSecureZeroMemory(fields, allocSize);
 
 	// Copy the metadata descriptors to the start of the descriptor array.
@@ -183,18 +247,16 @@ NTSTATUS EtwTrace(
 	memcpy(&fields[1], &eventMetadataDesc, sizeof(EVENT_DATA_DESCRIPTOR));
 
 	// Create an event data descriptor for each property.
-	detail::EtwCreateTracePropertyRecursive(OUT fields, 2, args...);
+	detail::CreateTracePropertyRecursive(OUT fields, 2, args...);
 
 	// Create the top-level event descriptor.
-	const auto eventDesc = detail::EtwCreateEventDescriptor(keyword, eventLevel);
+	const auto eventDesc = detail::CreateEventDescriptor(keyword, eventLevel);
 
 	// Write the event.
 	status = EtwWrite(regHandle, &eventDesc, NULL, numberOfDescriptors, fields);
 
-	EtwUnregister(regHandle);
-	ExFreePool((PVOID)providerMetadataDesc.Ptr);
-	ExFreePool((PVOID)eventMetadataDesc.Ptr);
-	ExFreePool(fields);
+	// Unregister the event and deallocate memory.
+	detail::Cleanup(regHandle, (PVOID)providerMetadataDesc.Ptr, (PVOID)eventMetadataDesc.Ptr, fields);
 
 	return status;
 }
