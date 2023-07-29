@@ -249,7 +249,7 @@ NTSTATUS EtwTrace(
 	// It is unsafe to call EtwRegister() at higher than PASSIVE_LEVEL
 	if (KeGetCurrentIrql() > PASSIVE_LEVEL)
 	{
-		return STATUS_NOT_IMPLEMENTED;
+		return STATUS_UNSUCCESSFUL;
 	}
 
 	// Register the kernel-mode ETW provider.
