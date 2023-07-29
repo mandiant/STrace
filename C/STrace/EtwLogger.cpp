@@ -254,7 +254,7 @@ NTSTATUS EtwTrace(
 
 	// Register the kernel-mode ETW provider.
 	REGHANDLE regHandle = 0;
-	NTSTATUS status = EtwRegister(providerGuid, NULL, NULL, OUT & regHandle);
+	NTSTATUS status = EtwRegister(providerGuid, NULL, NULL, &regHandle);
 	if (status != STATUS_SUCCESS)
 	{
 		return status;
