@@ -53,7 +53,7 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* pr
 		return EVENT_DATA_DESCRIPTOR{};
 	}
 
-	RtlSecureZeroMemory(providerMetadata, providerMetadataLength);
+	memset(providerMetadata, 0, providerMetadataLength);
 	providerMetadata->TotalLength = providerMetadataLength;
 	strcpy(providerMetadata->ProviderName, providerName);
 
@@ -99,7 +99,7 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 		return EVENT_DATA_DESCRIPTOR{};
 	}
 
-	RtlSecureZeroMemory(eventMetadata, eventMetadataLength);
+	memset(eventMetadata, 0, eventMetadataLength);
 
 	// Set the first three fields, metadata about the event.
 	eventMetadata->TotalLength = eventMetadataLength;
@@ -207,7 +207,7 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateTraceProperty(int fieldType, vo
 __declspec(noinline) EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
 {
 	EVENT_DESCRIPTOR desc;
-	RtlSecureZeroMemory(&desc, sizeof(EVENT_DESCRIPTOR));
+	memset(&desc, 0, sizeof(EVENT_DESCRIPTOR));
 	desc.Channel = 11;  // All "manifest-free" events should go to channel 11 by default
 	desc.Keyword = keyword;
 	desc.Level = level;
@@ -270,7 +270,7 @@ NTSTATUS EtwTrace(
 		Cleanup(regHandle);
 		return STATUS_UNSUCCESSFUL;
 	}
-	RtlSecureZeroMemory(dataDescriptors, allocSize);
+	memset(dataDescriptors, 0, allocSize);
 
 	// Create the provider metadata descriptor, and tell the provider to use the
 	// metadata given by the descriptor.
