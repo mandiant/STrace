@@ -1,6 +1,11 @@
 #include "EtwLogger.h"
 
+#include "vector.h"
+
 #define va_copy(dest, src) (dest = src)
+
+// Cache of all created providers.
+MyVector<detail::EtwProvider> g_ProviderCache;
 
 typedef enum _ETW_FIELD_TYPE
 {
@@ -29,11 +34,78 @@ typedef enum _ETW_FIELD_TYPE
 	EtwFieldPid = (EtwFieldInt32 | 0x05 << 8),
 } ETW_FIELD_TYPE;
 
-struct ProviderMetadata
+namespace detail
 {
-	uint16_t TotalLength;
-	char ProviderName[ANYSIZE_ARRAY];
-};
+
+EtwProvider::EtwProvider(LPCGUID providerGuid) : m_guid{ providerGuid }, m_regHandle{}, m_providerMetadataDesc{}
+{
+}
+
+NTSTATUS EtwProvider::Initialize(const char* providerName)
+{
+	// Register the kernel-mode ETW provider.
+	auto status = EtwRegister(m_guid, NULL, NULL, &m_regHandle);
+	if (status != STATUS_SUCCESS)
+	{
+		return status;
+	}
+
+	// Create packaged provider metadata structure.
+	// <https://learn.microsoft.com/en-us/windows/win32/etw/provider-traits>
+	const auto providerMetadataLength = (uint16_t)((strlen(providerName) + 1) + sizeof(uint16_t));
+	const auto providerMetadata = (struct ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, providerMetadataLength, 'wteO');
+	if (providerMetadata == NULL)
+	{
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	memset(providerMetadata, 0, providerMetadataLength);
+	providerMetadata->TotalLength = providerMetadataLength;
+	strcpy(providerMetadata->ProviderName, providerName);
+
+	// Tell the provider to use the metadata structure.
+	status = EtwSetInformation(m_regHandle, EventProviderSetTraits, providerMetadata, providerMetadataLength);
+	if (status != STATUS_SUCCESS)
+	{
+		return status;
+	}
+
+	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
+	EventDataDescCreate(&m_providerMetadataDesc, providerMetadata, providerMetadata->TotalLength);
+	m_providerMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_PROVIDER_METADATA;  // Descriptor contains provider metadata.
+
+	return STATUS_SUCCESS;
+}
+
+void EtwProvider::Destruct()
+{
+	if (m_regHandle != 0)
+	{
+		EtwUnregister(m_regHandle);
+	}
+
+	if (m_providerMetadataDesc.Ptr != NULL)
+	{
+		ExFreePool((PVOID)m_providerMetadataDesc.Ptr);
+	}
+}
+
+NTSTATUS EtwProvider::WriteEvent(PCEVENT_DESCRIPTOR eventDescriptor, ULONG numberOfDescriptors, PEVENT_DATA_DESCRIPTOR descriptors) const
+{
+	return EtwWrite(m_regHandle, eventDescriptor, NULL, numberOfDescriptors, descriptors);
+}
+
+LPCGUID EtwProvider::Guid() const noexcept
+{
+	return m_guid;
+}
+
+EVENT_DATA_DESCRIPTOR EtwProvider::ProviderMetadataDescriptor() const noexcept
+{
+	return m_providerMetadataDesc;
+}
+
+} // namespace detail
 
 struct EventMetadata
 {
@@ -41,29 +113,6 @@ struct EventMetadata
 	uint8_t Tag;
 	char EventName[ANYSIZE_ARRAY];
 };
-
-__declspec(noinline) EVENT_DATA_DESCRIPTOR CreateProviderMetadata(const char* providerName)
-{
-	// Create packaged provider metadata structure.
-	// <https://learn.microsoft.com/en-us/windows/win32/etw/provider-traits>
-	const auto providerMetadataLength = (uint16_t)((strlen(providerName) + 1) + sizeof(uint16_t));
-	const auto providerMetadata = (struct ProviderMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, providerMetadataLength, 'wteO');
-	if (providerMetadata == NULL)
-	{
-		return EVENT_DATA_DESCRIPTOR{};
-	}
-
-	memset(providerMetadata, 0, providerMetadataLength);
-	providerMetadata->TotalLength = providerMetadataLength;
-	strcpy(providerMetadata->ProviderName, providerName);
-
-	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
-	EVENT_DATA_DESCRIPTOR providerMetadataDesc;
-	EventDataDescCreate(&providerMetadataDesc, providerMetadata, providerMetadata->TotalLength);
-	providerMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_PROVIDER_METADATA;  // Descriptor contains provider metadata.
-
-	return providerMetadataDesc;
-}
 
 __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* eventName, int numberOfFields, va_list args)
 {
@@ -130,11 +179,34 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR CreateEventMetadata(const char* event
 	return eventMetadataDesc;
 }
 
+detail::EtwProvider* FindProvider(LPCGUID providerGuid)
+{
+	for (auto i = 0; i < g_ProviderCache.len(); i++)
+	{
+		if ((g_ProviderCache[i].Guid()->Data1 == providerGuid->Data1) &&
+			(g_ProviderCache[i].Guid()->Data2 == providerGuid->Data2) &&
+			(g_ProviderCache[i].Guid()->Data3 == providerGuid->Data3) &&
+			(g_ProviderCache[i].Guid()->Data4[0] == providerGuid->Data4[0]) &&
+			(g_ProviderCache[i].Guid()->Data4[1] == providerGuid->Data4[1]) &&
+			(g_ProviderCache[i].Guid()->Data4[2] == providerGuid->Data4[2]) &&
+			(g_ProviderCache[i].Guid()->Data4[3] == providerGuid->Data4[3]) &&
+			(g_ProviderCache[i].Guid()->Data4[4] == providerGuid->Data4[4]) &&
+			(g_ProviderCache[i].Guid()->Data4[5] == providerGuid->Data4[5]) &&
+			(g_ProviderCache[i].Guid()->Data4[6] == providerGuid->Data4[6]) &&
+			(g_ProviderCache[i].Guid()->Data4[7] == providerGuid->Data4[7]))
+		{
+			return &g_ProviderCache[i];
+		}
+	}
+
+	return NULL;
+}
+
 __declspec(noinline) size_t SizeOfField(int fieldType, void* fieldValue)
 {
 	size_t sizeOfField = 0;
 
-	switch (fieldType)
+	switch (fieldType & 0x000000FF)
 	{
 	case EtwFieldAnsiString:
 		sizeOfField = strlen((char*)fieldValue) + 1;
@@ -215,16 +287,11 @@ __declspec(noinline) EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, ui
 	return desc;
 }
 
-__declspec(noinline) void Cleanup(REGHANDLE regHandle = 0, PEVENT_DATA_DESCRIPTOR eventDescriptors = NULL, int numberOfDescriptors = 0)
+__declspec(noinline) void Cleanup(PEVENT_DATA_DESCRIPTOR eventDescriptors, int numberOfDescriptors)
 {
-	if (regHandle != 0)
-	{
-		EtwUnregister(regHandle);
-	}
-
 	if (eventDescriptors != NULL)
 	{
-		for (int i = 0; i < numberOfDescriptors; i++)
+		for (int i = 1 /* skip the first descriptor */; i < numberOfDescriptors; i++)
 		{
 			if (eventDescriptors[i].Ptr != NULL)
 			{
@@ -252,12 +319,20 @@ NTSTATUS EtwTrace(
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	// Register the kernel-mode ETW provider.
-	REGHANDLE regHandle = 0;
-	NTSTATUS status = EtwRegister(providerGuid, NULL, NULL, &regHandle);
-	if (status != STATUS_SUCCESS)
+	// If we have already made a provider with the given GUID, get it out of the
+	// cache, otherwise create and register a new provider with the name and GUID.
+	auto etwProvider = FindProvider(providerGuid);
+	if (etwProvider == NULL)
 	{
-		return status;
+		detail::EtwProvider newEtwProvider{ providerGuid };
+		const auto status = newEtwProvider.Initialize(providerName);
+		if (status != STATUS_SUCCESS)
+		{
+			return status;
+		}
+
+		g_ProviderCache.push_back(newEtwProvider);
+		etwProvider = &g_ProviderCache.back();
 	}
 
 	// Allocate space for the data descriptors, including two additional slots
@@ -267,26 +342,13 @@ NTSTATUS EtwTrace(
 	const auto dataDescriptors = (PEVENT_DATA_DESCRIPTOR)ExAllocatePoolWithTag(NonPagedPoolNx, allocSize, 'wteP');
 	if (dataDescriptors == NULL)
 	{
-		Cleanup(regHandle);
 		return STATUS_UNSUCCESSFUL;
 	}
 	memset(dataDescriptors, 0, allocSize);
 
 	// Create the provider metadata descriptor, and tell the provider to use the
 	// metadata given by the descriptor.
-	dataDescriptors[0] = CreateProviderMetadata(providerName);
-	if (dataDescriptors[0].Ptr == NULL)
-	{
-		Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
-		return STATUS_UNSUCCESSFUL;
-	}
-
-	status = EtwSetInformation(regHandle, EventProviderSetTraits, (PVOID)dataDescriptors[0].Ptr, dataDescriptors[0].Size);
-	if (status != STATUS_SUCCESS)
-	{
-		Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
-		return status;
-	}
+	dataDescriptors[0] = etwProvider->ProviderMetadataDescriptor();
 
 	// Create the event metadata descriptor.
 	va_list args;
@@ -294,7 +356,7 @@ NTSTATUS EtwTrace(
 	dataDescriptors[1] = CreateEventMetadata(eventName, numberOfFields, args);
 	if (dataDescriptors[1].Ptr == NULL)
 	{
-		Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
+		Cleanup(dataDescriptors, numberOfDescriptors);
 		return STATUS_UNSUCCESSFUL;
 	}
 	va_end(args);
@@ -313,7 +375,7 @@ NTSTATUS EtwTrace(
 			fieldType != EtwFieldAnsiString ? &fieldValue : (void*)fieldValue);
 		if (dataDescriptors[i + 2].Ptr == NULL)
 		{
-			Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
+			Cleanup(dataDescriptors, numberOfDescriptors);
 			return STATUS_UNSUCCESSFUL;
 		}
 	}
@@ -323,10 +385,10 @@ NTSTATUS EtwTrace(
 	const auto eventDesc = CreateEventDescriptor(keyword, eventLevel);
 
 	// Write the event.
-	status = EtwWrite(regHandle, &eventDesc, NULL, numberOfDescriptors, dataDescriptors);
+	const auto status = etwProvider->WriteEvent(&eventDesc, numberOfDescriptors, dataDescriptors);
 
 	// Unregister the event and deallocate memory.
-	Cleanup(regHandle, dataDescriptors, numberOfDescriptors);
+	Cleanup(dataDescriptors, numberOfDescriptors);
 
 	return status;
 }
