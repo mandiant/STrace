@@ -1,21 +1,6 @@
 #pragma once
 
-namespace detail
-{
-
-// <https://en.cppreference.com/w/cpp/types/remove_reference>
-template<typename T> struct remove_reference { typedef T type; };
-template<typename T> struct remove_reference<T&> { typedef T type; };
-template<typename T> struct remove_reference<T&&> { typedef T type; };
-
-// <https://stackoverflow.com/a/7518365>
-template<typename T>
-typename remove_reference<T>::type&& move(T&& arg)
-{
-	return static_cast<typename remove_reference<T>::type&&>(arg);
-}
-
-} // namespace detail
+#include "Interface.h"
 
 template<typename T>
 class MyVector {
@@ -38,8 +23,23 @@ public:
 	MyVector& operator=(const MyVector&) = delete;
 
 	// non-moveable
-	MyVector(MyVector&&) = delete;
-	MyVector& operator=(MyVector&&) = delete;
+	MyVector(MyVector&& other) {
+		resize(other.len());
+		for (auto i = 0; i < other.len(); i++)
+		{
+			data[i] = move(other.data[i]);
+		}
+	}
+
+	MyVector& operator=(MyVector&& other) {
+		resize(other.len());
+		for (auto i = 0; i < other.len(); i++)
+		{
+			data[i] = move(other.data[i]);
+		}
+
+		return *this;
+	}
 
 	void Destruct() {
 		if (data) {
@@ -62,7 +62,7 @@ public:
 		if (size >= capacity) {
 			reserve((size + 1) * 2); // grow 2x
 		}
-		data[size++] = detail::move(item);
+		data[size++] = move(item);
 	}
 
 	void pop_back() {
@@ -78,7 +78,7 @@ public:
 			T* start = &data[idx];
 			T* next = &data[idx + 1];
 			for (int i = 0; i < leftOvers; i++) {
-				*start++ = detail::move(*next++);
+				*start++ = move(*next++);
 			}
 			size--;
 		}
@@ -102,7 +102,7 @@ public:
 		if (data) {
 			// resize might want us to shrink
 			for (size_t i = 0; i < size; i++) {
-				new_data[i] = detail::move(data[i]);
+				new_data[i] = move(data[i]);
 			}
 			deallocate((char*)data);
 			data = nullptr;
