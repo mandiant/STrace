@@ -134,7 +134,7 @@ NTSTATUS EtwProvider::AddEvent(const char* eventName, int numberOfFields, va_lis
 	return status;
 }
 
-NTSTATUS EtwProvider::WriteEvent(const char* eventName, PCEVENT_DESCRIPTOR eventDescriptor, int numberOfFields, va_list fields)
+NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint64_t keyword, int numberOfFields, va_list fields)
 {
 	// Find the event to use.
 	const auto event = FindEvent(eventName);
@@ -177,8 +177,15 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, PCEVENT_DESCRIPTOR event
 	}
 	va_end(args);
 
+	// Create the event descriptor.
+	EVENT_DESCRIPTOR eventDescriptor;
+	memset(&eventDescriptor, 0, sizeof(EVENT_DESCRIPTOR));
+	eventDescriptor.Channel = 11;  // All "manifest-free" events should go to channel 11 by default
+	eventDescriptor.Keyword = keyword;
+	eventDescriptor.Level = eventLevel;
+
 	// Write the event.
-	return EtwWrite(m_regHandle, eventDescriptor, NULL, numberOfDescriptors, dataDescriptors);
+	return EtwWrite(m_regHandle, &eventDescriptor, NULL, numberOfDescriptors, dataDescriptors);
 
 	// TODO: This leaks the memory allocated for the field descriptors
 }
@@ -401,17 +408,6 @@ detail::EtwProvider* FindProvider(LPCGUID providerGuid)
 	return NULL;
 }
 
-EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
-{
-	EVENT_DESCRIPTOR desc;
-	memset(&desc, 0, sizeof(EVENT_DESCRIPTOR));
-	desc.Channel = 11;  // All "manifest-free" events should go to channel 11 by default
-	desc.Keyword = keyword;
-	desc.Level = level;
-
-	return desc;
-}
-
 NTSTATUS EtwTrace(
 	const char* providerName,
 	const GUID* providerGuid,
@@ -454,13 +450,10 @@ NTSTATUS EtwTrace(
 	}
 	va_end(args);
 
-	// Create the top-level event descriptor.
-	const auto eventDesc = CreateEventDescriptor(keyword, eventLevel);
-
 	// Write the event.
 	va_list args2;
 	va_start(args2, numberOfFields);
-	status = etwProvider->WriteEvent(eventName, &eventDesc, numberOfFields, args2);
+	status = etwProvider->WriteEvent(eventName, eventLevel, keyword, numberOfFields, args2);
 	va_end(args2);
 
 	return status;
