@@ -136,6 +136,9 @@ __declspec(noinline) size_t SizeOfField(int fieldType, void* fieldValue)
 
 	switch (fieldType)
 	{
+	case EtwFieldUnicodeString:
+		sizeOfField = (wcslen((wchar_t*)fieldValue) + 1) * sizeof(wchar_t);
+		break;
 	case EtwFieldAnsiString:
 		sizeOfField = strlen((char*)fieldValue) + 1;
 		break;
@@ -170,10 +173,16 @@ __declspec(noinline) size_t SizeOfField(int fieldType, void* fieldValue)
 		sizeOfField = sizeof(double);
 		break;
 	case EtwFieldBool32:
-		sizeOfField = 4;
+		sizeOfField = sizeof(int32_t);
 		break;
 	case EtwFieldGuid:
 		sizeOfField = sizeof(GUID);
+		break;
+	case EtwFieldHexInt32:
+		sizeOfField = sizeof(int32_t);
+		break;
+	case EtwFieldHexInt64:
+		sizeOfField = sizeof(int64_t);
 		break;
 	// TODO: more fields
 	default:
