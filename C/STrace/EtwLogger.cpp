@@ -37,96 +37,6 @@ typedef enum _ETW_FIELD_TYPE
 namespace detail
 {
 
-#pragma region EtwProviderEvent
-
-EtwProviderEvent::EtwProviderEvent() : m_eventMetadataDesc{}
-{
-}
-
-NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields, va_list fields)
-{
-	// Allocate the total size of the event metadata structure.
-	//
-	// This consists of, in order:
-	//
-	// * The total length of the structure
-	// * The event tag byte (currently always 0)
-	// * The name of the event
-	// * An array of field metadata structures, which are:
-	//     * the name of the field
-	//     * a single byte for the type.
-	const auto eventMetadataHeaderLength = strlen(eventName) + 1 + sizeof(uint16_t) + sizeof(uint8_t);
-
-	// Calculate the total size to allocate for the event metadata - the size
-	// of the header plus the sum of length of each field name and the type byte.
-	va_list args;
-	va_copy(args, fields);
-	auto eventMetadataLength = (uint16_t)eventMetadataHeaderLength;
-	for (auto i = 0; i < numberOfFields; i++)
-	{
-		const auto fieldName = va_arg(args, const char*);
-		eventMetadataLength += (uint16_t)(strlen(fieldName) + 1 + sizeof(uint8_t));
-		va_arg(args, int);
-		va_arg(args, void*);
-	}
-	va_end(args);
-
-	const auto eventMetadata = (struct EventMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
-	if (eventMetadata == NULL)
-	{
-		return STATUS_UNSUCCESSFUL;
-	}
-
-	memset(eventMetadata, 0, eventMetadataLength);
-
-	// Set the first three fields, metadata about the event.
-	eventMetadata->TotalLength = eventMetadataLength;
-	eventMetadata->Tag = 0;
-	strcpy(eventMetadata->EventName, eventName);
-
-	// Set the metadata for each field.
-	char* currentLocation = ((char*)eventMetadata) + eventMetadataHeaderLength;
-	va_copy(args, fields);
-	for (auto i = 0; i < numberOfFields; i++)
-	{
-		const auto fieldName = va_arg(args, const char*);
-		const auto fieldType = va_arg(args, int);
-		va_arg(args, void*);
-
-		strcpy(currentLocation, fieldName);
-		currentLocation[strlen(fieldName) + 1] = (uint8_t)fieldType;
-
-		currentLocation += strlen(fieldName) + 1 + sizeof(uint8_t);
-	}
-	va_end(args);
-
-	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
-	EventDataDescCreate(&m_eventMetadataDesc, eventMetadata, eventMetadata->TotalLength);
-	m_eventMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_EVENT_METADATA;  // Descriptor contains event metadata.
-
-	return STATUS_SUCCESS;
-}
-
-void EtwProviderEvent::Destruct()
-{
-	if (m_eventMetadataDesc.Ptr != NULL)
-	{
-		ExFreePool((PVOID)m_eventMetadataDesc.Ptr);
-	}
-}
-
-const char* EtwProviderEvent::Name() const
-{
-	return ((EventMetadata*)m_eventMetadataDesc.Ptr)->EventName;
-}
-
-EVENT_DATA_DESCRIPTOR EtwProviderEvent::MetadataDescriptor() const
-{
-	return m_eventMetadataDesc;
-}
-
-#pragma endregion
-
 #pragma region EtwProvider
 
 EtwProvider::EtwProvider(LPCGUID providerGuid) : m_guid{ providerGuid }, m_regHandle{}, m_providerMetadataDesc{}, m_events{}
@@ -291,7 +201,7 @@ EtwProviderEvent* EtwProvider::FindEvent(const char* eventName)
 	return NULL;
 }
 
-__declspec(noinline) size_t EtwProvider::SizeOfField(int fieldType, void* fieldValue)
+size_t EtwProvider::SizeOfField(int fieldType, void* fieldValue)
 {
 	size_t sizeOfField = 0;
 
@@ -354,7 +264,7 @@ __declspec(noinline) size_t EtwProvider::SizeOfField(int fieldType, void* fieldV
 	return sizeOfField;
 }
 
-__declspec(noinline) EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(int fieldType, void* fieldValue)
+EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(int fieldType, void* fieldValue)
 {
 	// Copy the input value to its own space.
 	EVENT_DATA_DESCRIPTOR fieldDesc;
@@ -376,6 +286,96 @@ __declspec(noinline) EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(int 
 
 #pragma endregion
 
+#pragma region EtwProviderEvent
+
+EtwProviderEvent::EtwProviderEvent() : m_eventMetadataDesc{}
+{
+}
+
+NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields, va_list fields)
+{
+	// Allocate the total size of the event metadata structure.
+	//
+	// This consists of, in order:
+	//
+	// * The total length of the structure
+	// * The event tag byte (currently always 0)
+	// * The name of the event
+	// * An array of field metadata structures, which are:
+	//     * the name of the field
+	//     * a single byte for the type.
+	const auto eventMetadataHeaderLength = strlen(eventName) + 1 + sizeof(uint16_t) + sizeof(uint8_t);
+
+	// Calculate the total size to allocate for the event metadata - the size
+	// of the header plus the sum of length of each field name and the type byte.
+	va_list args;
+	va_copy(args, fields);
+	auto eventMetadataLength = (uint16_t)eventMetadataHeaderLength;
+	for (auto i = 0; i < numberOfFields; i++)
+	{
+		const auto fieldName = va_arg(args, const char*);
+		eventMetadataLength += (uint16_t)(strlen(fieldName) + 1 + sizeof(uint8_t));
+		va_arg(args, int);
+		va_arg(args, void*);
+	}
+	va_end(args);
+
+	const auto eventMetadata = (struct EventMetadata*)ExAllocatePoolWithTag(NonPagedPoolNx, eventMetadataLength, 'wteE');
+	if (eventMetadata == NULL)
+	{
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	memset(eventMetadata, 0, eventMetadataLength);
+
+	// Set the first three fields, metadata about the event.
+	eventMetadata->TotalLength = eventMetadataLength;
+	eventMetadata->Tag = 0;
+	strcpy(eventMetadata->EventName, eventName);
+
+	// Set the metadata for each field.
+	char* currentLocation = ((char*)eventMetadata) + eventMetadataHeaderLength;
+	va_copy(args, fields);
+	for (auto i = 0; i < numberOfFields; i++)
+	{
+		const auto fieldName = va_arg(args, const char*);
+		const auto fieldType = va_arg(args, int);
+		va_arg(args, void*);
+
+		strcpy(currentLocation, fieldName);
+		currentLocation[strlen(fieldName) + 1] = (uint8_t)fieldType;
+
+		currentLocation += strlen(fieldName) + 1 + sizeof(uint8_t);
+	}
+	va_end(args);
+
+	// Create an EVENT_DATA_DESCRIPTOR pointing to the metadata.
+	EventDataDescCreate(&m_eventMetadataDesc, eventMetadata, eventMetadata->TotalLength);
+	m_eventMetadataDesc.Type = EVENT_DATA_DESCRIPTOR_TYPE_EVENT_METADATA;  // Descriptor contains event metadata.
+
+	return STATUS_SUCCESS;
+}
+
+void EtwProviderEvent::Destruct()
+{
+	if (m_eventMetadataDesc.Ptr != NULL)
+	{
+		ExFreePool((PVOID)m_eventMetadataDesc.Ptr);
+	}
+}
+
+const char* EtwProviderEvent::Name() const
+{
+	return ((EventMetadata*)m_eventMetadataDesc.Ptr)->EventName;
+}
+
+EVENT_DATA_DESCRIPTOR EtwProviderEvent::MetadataDescriptor() const
+{
+	return m_eventMetadataDesc;
+}
+
+#pragma endregion
+
 } // namespace detail
 
 detail::EtwProvider* FindProvider(LPCGUID providerGuid)
@@ -383,16 +383,16 @@ detail::EtwProvider* FindProvider(LPCGUID providerGuid)
 	for (auto i = 0; i < g_ProviderCache.len(); i++)
 	{
 		if ((g_ProviderCache[i].Guid()->Data1 == providerGuid->Data1) &&
-			(g_ProviderCache[i].Guid()->Data2 == providerGuid->Data2) &&
-			(g_ProviderCache[i].Guid()->Data3 == providerGuid->Data3) &&
-			(g_ProviderCache[i].Guid()->Data4[0] == providerGuid->Data4[0]) &&
-			(g_ProviderCache[i].Guid()->Data4[1] == providerGuid->Data4[1]) &&
-			(g_ProviderCache[i].Guid()->Data4[2] == providerGuid->Data4[2]) &&
-			(g_ProviderCache[i].Guid()->Data4[3] == providerGuid->Data4[3]) &&
-			(g_ProviderCache[i].Guid()->Data4[4] == providerGuid->Data4[4]) &&
-			(g_ProviderCache[i].Guid()->Data4[5] == providerGuid->Data4[5]) &&
-			(g_ProviderCache[i].Guid()->Data4[6] == providerGuid->Data4[6]) &&
-			(g_ProviderCache[i].Guid()->Data4[7] == providerGuid->Data4[7]))
+		    (g_ProviderCache[i].Guid()->Data2 == providerGuid->Data2) &&
+		    (g_ProviderCache[i].Guid()->Data3 == providerGuid->Data3) &&
+		    (g_ProviderCache[i].Guid()->Data4[0] == providerGuid->Data4[0]) &&
+		    (g_ProviderCache[i].Guid()->Data4[1] == providerGuid->Data4[1]) &&
+		    (g_ProviderCache[i].Guid()->Data4[2] == providerGuid->Data4[2]) &&
+		    (g_ProviderCache[i].Guid()->Data4[3] == providerGuid->Data4[3]) &&
+		    (g_ProviderCache[i].Guid()->Data4[4] == providerGuid->Data4[4]) &&
+		    (g_ProviderCache[i].Guid()->Data4[5] == providerGuid->Data4[5]) &&
+		    (g_ProviderCache[i].Guid()->Data4[6] == providerGuid->Data4[6]) &&
+		    (g_ProviderCache[i].Guid()->Data4[7] == providerGuid->Data4[7]))
 		{
 			return &g_ProviderCache[i];
 		}
@@ -401,7 +401,7 @@ detail::EtwProvider* FindProvider(LPCGUID providerGuid)
 	return NULL;
 }
 
-__declspec(noinline) EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
+EVENT_DESCRIPTOR CreateEventDescriptor(uint64_t keyword, uint8_t level)
 {
 	EVENT_DESCRIPTOR desc;
 	memset(&desc, 0, sizeof(EVENT_DESCRIPTOR));
