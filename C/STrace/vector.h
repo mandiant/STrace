@@ -23,7 +23,7 @@ public:
 	MyVector& operator=(const MyVector&) = delete;
 
 	// non-moveable
-	MyVector(MyVector&& other) {
+	MyVector(MyVector&& other): MyVector() {
 		resize(other.len());
 		for (auto i = 0; i < other.len(); i++)
 		{
@@ -32,6 +32,9 @@ public:
 	}
 
 	MyVector& operator=(MyVector&& other) {
+		size = 0;
+		capacity = 0;
+		data = nullptr;
 		resize(other.len());
 		for (auto i = 0; i < other.len(); i++)
 		{
