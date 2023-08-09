@@ -146,6 +146,7 @@
     <ClInclude Include="MyStdint.h" />
     <ClInclude Include="NtBuild.h" />
     <ClInclude Include="NtStructs.h" />
+    <ClInclude Include="vector.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

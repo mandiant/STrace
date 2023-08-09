@@ -292,4 +292,17 @@ typedef void(*tStpInitialize)(PluginApis& pApis);
 typedef void(*tStpDeInitialize)();
 
 // Assert a function is the same type as a function pointer typedef, or throw msg as a compiler error
-#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(is_same_v<decltype(&Implementer), tFnTypeDef>, msg); 
+#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(is_same_v<decltype(&Implementer), tFnTypeDef>, msg);
+
+// std::move reimplementation
+// <https://en.cppreference.com/w/cpp/types/remove_reference>
+template<typename T> struct remove_reference { typedef T type; };
+template<typename T> struct remove_reference<T&> { typedef T type; };
+template<typename T> struct remove_reference<T&&> { typedef T type; };
+
+// <https://stackoverflow.com/a/7518365>
+template<typename T>
+typename remove_reference<T>::type&& move(T&& arg)
+{
+	return static_cast<typename remove_reference<T>::type&&>(arg);
+}

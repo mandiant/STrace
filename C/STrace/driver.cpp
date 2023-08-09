@@ -537,6 +537,15 @@ Return Value:
     UNICODE_STRING  DosDevicesLinkName;
 
     //
+    // Unregister any registered ETW providers.
+    //
+    for (auto i = 0; i < g_ProviderCache.len(); i++)
+    {
+        g_ProviderCache[i].Destruct();
+    }
+    g_ProviderCache.Destruct();
+
+    //
     // Delete the link from our device name to a name in the Win32 namespace.
     //
     RtlInitUnicodeString(&DosDevicesLinkName, DOS_DEVICES_LINK_NAME);
