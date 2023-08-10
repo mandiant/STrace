@@ -43,7 +43,7 @@ public:
 	NTSTATUS AddEvent(const char* eventName, int numberOfFields, va_list fields);
 	NTSTATUS WriteEvent(const char* eventName, uint8_t eventLevel, uint64_t keyword, int numberOfFields, va_list fields);
 
-	LPCGUID Guid() const noexcept;
+	LPCGUID Guid() const;
 
 private:
 	struct ProviderMetadata

@@ -263,7 +263,7 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 	// TODO: This leaks the memory allocated for the field descriptors
 }
 
-LPCGUID EtwProvider::Guid() const noexcept
+LPCGUID EtwProvider::Guid() const
 {
 	return m_guid;
 }
