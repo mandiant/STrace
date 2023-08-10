@@ -172,12 +172,8 @@ NTSTATUS EtwProvider::Initialize(const char* providerName)
 	return STATUS_SUCCESS;
 }
 
-void EtwProvider::Destruct()
+EtwProvider::~EtwProvider()
 {
-	for (auto i = 0; i < m_events.len(); i++)
-	{
-		m_events[i].Destruct();
-	}
 	m_events.Destruct();
 
 	if (m_regHandle != 0)
@@ -494,7 +490,7 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	return STATUS_SUCCESS;
 }
 
-void EtwProviderEvent::Destruct()
+EtwProviderEvent::~EtwProviderEvent()
 {
 	if (m_eventMetadataDesc.Ptr != NULL)
 	{
