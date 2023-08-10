@@ -282,7 +282,7 @@ EtwProviderEvent* EtwProvider::FindEvent(const char* eventName)
 	return NULL;
 }
 
-size_t EtwProvider::SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue)
+size_t EtwProvider::SizeOfField(ETW_FIELD_TYPE fieldType, char* fieldValue)
 {
 	size_t sizeOfField = 0;
 
@@ -297,7 +297,7 @@ size_t EtwProvider::SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue)
 		sizeOfField = (wcslen((wchar_t*)fieldValue) + 1) * sizeof(wchar_t);
 		break;
 	case EtwInAnsiString:
-		sizeOfField = strlen((char*)fieldValue) + 1;
+		sizeOfField = strlen(fieldValue) + 1;
 		break;
 	case EtwInInt8:
 		sizeOfField = sizeof(int8_t);
@@ -364,7 +364,7 @@ size_t EtwProvider::SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue)
 	return sizeOfField;
 }
 
-void* EtwProvider::GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue)
+char* EtwProvider::GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue)
 {
 	// Get the address of the field value for the field's descriptor.
 	//
@@ -374,17 +374,17 @@ void* EtwProvider::GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& field
 	{
 	case EtwInAnsiString:
 	case EtwInUnicodeString:
-		return (void*)fieldValue;
+		return (char*)fieldValue;
 	case EtwInCountedAnsiString:
-		return (void*)(((PSTRING)fieldValue)->Buffer);
+		return (char*)(((PSTRING)fieldValue)->Buffer);
 	case EtwInCountedString:
-		return (void*)(((PUNICODE_STRING)fieldValue)->Buffer);
+		return (char*)(((PUNICODE_STRING)fieldValue)->Buffer);
 	default:
-		return (void*)&fieldValue;
+		return (char*)&fieldValue;
 	}
 }
 
-EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(ETW_FIELD_TYPE fieldType, void* fieldValue)
+EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(ETW_FIELD_TYPE fieldType, char* fieldValue)
 {
 	// Copy the input value to its own space.
 	EVENT_DATA_DESCRIPTOR fieldDesc;
@@ -445,7 +445,7 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 			eventMetadataLength += sizeof(uint8_t);
 		}
 
-		va_arg(args, void*);
+		va_arg(args, char*);
 	}
 	va_end(args);
 
@@ -469,7 +469,7 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	{
 		const auto fieldName = va_arg(args, const char*);
 		const auto fieldType = va_arg(args, ETW_FIELD_TYPE);
-		va_arg(args, void*);
+		va_arg(args, char*);
 
 		// Copy the field name to the start of the metadata entry.
 		strcpy(currentLocation, fieldName);

@@ -53,9 +53,9 @@ private:
 	};
 
 	EtwProviderEvent* FindEvent(const char* eventName);
-	static size_t SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue);
-	static void* GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue);
-	static EVENT_DATA_DESCRIPTOR CreateTraceProperty(ETW_FIELD_TYPE fieldType, void* fieldValue);
+	static size_t SizeOfField(ETW_FIELD_TYPE fieldType, char* fieldValue);
+	static char* GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue);
+	static EVENT_DATA_DESCRIPTOR CreateTraceProperty(ETW_FIELD_TYPE fieldType, char* fieldValue);
 
 	LPCGUID m_guid;
 	REGHANDLE m_regHandle;
