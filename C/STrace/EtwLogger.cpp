@@ -521,17 +521,7 @@ detail::EtwProvider* FindProvider(LPCGUID providerGuid)
 {
 	for (auto i = 0; i < g_ProviderCache.len(); i++)
 	{
-		if ((g_ProviderCache[i].Guid()->Data1 == providerGuid->Data1) &&
-		    (g_ProviderCache[i].Guid()->Data2 == providerGuid->Data2) &&
-		    (g_ProviderCache[i].Guid()->Data3 == providerGuid->Data3) &&
-		    (g_ProviderCache[i].Guid()->Data4[0] == providerGuid->Data4[0]) &&
-		    (g_ProviderCache[i].Guid()->Data4[1] == providerGuid->Data4[1]) &&
-		    (g_ProviderCache[i].Guid()->Data4[2] == providerGuid->Data4[2]) &&
-		    (g_ProviderCache[i].Guid()->Data4[3] == providerGuid->Data4[3]) &&
-		    (g_ProviderCache[i].Guid()->Data4[4] == providerGuid->Data4[4]) &&
-		    (g_ProviderCache[i].Guid()->Data4[5] == providerGuid->Data4[5]) &&
-		    (g_ProviderCache[i].Guid()->Data4[6] == providerGuid->Data4[6]) &&
-		    (g_ProviderCache[i].Guid()->Data4[7] == providerGuid->Data4[7]))
+		if (memcmp(providerGuid, g_ProviderCache[i].Guid(), sizeof(GUID) == 0))
 		{
 			return &g_ProviderCache[i];
 		}
