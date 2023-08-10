@@ -114,7 +114,7 @@ namespace detail
 
 #pragma region EtwProvider
 
-EtwProvider::EtwProvider(LPCGUID providerGuid) : m_guid{ providerGuid }, m_regHandle{}, m_providerMetadataDesc{}, m_events{}
+EtwProvider::EtwProvider(LPCGUID providerGuid) : m_guid(providerGuid), m_regHandle(), m_providerMetadataDesc(), m_events()
 {
 }
 
@@ -407,7 +407,7 @@ EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(ETW_FIELD_TYPE fieldType,
 
 #pragma region EtwProviderEvent
 
-EtwProviderEvent::EtwProviderEvent() : m_eventMetadataDesc{}
+EtwProviderEvent::EtwProviderEvent() : m_eventMetadataDesc()
 {
 }
 
