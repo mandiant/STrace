@@ -7,31 +7,106 @@
 // Cache of all created providers.
 MyVector<detail::EtwProvider> g_ProviderCache;
 
+// ETW field type definitions, see TlgIn_t and TlgOut_t in TraceLoggingProvider.h
+#define ETW_FIELD(in, out)  (in | 0x80 | out << 8)
+#define ETW_FIELD_HAS_OUT_TYPE(field) ((field & 0x80) == 0x80)
+#define ETW_IN_TYPE(field) (field & 0xFF)
+#define ETW_OUT_TYPE(field) ((field & 0xFF00) >> 8)
+
+typedef enum _ETW_IN_FIELD_TYPE
+{
+	EtwInNull,
+	EtwInUnicodeString,
+	EtwInAnsiString,
+	EtwInInt8,
+	EtwInUInt8,
+	EtwInInt16,
+	EtwInUInt16,
+	EtwInInt32,
+	EtwInUInt32,
+	EtwInInt64,
+	EtwInUInt64,
+	EtwInFloat,
+	EtwInDouble,
+	EtwInBool32,
+	EtwInBinary,
+	EtwInGuid,
+	EtwInPointer,
+	EtwInFiletime,
+	EtwInSystemTime,
+	EtwInSid,
+	EtwInHexInt32,
+	EtwInHexInt64,
+	EtwInCountedString,
+	EtwInCountedAnsiString,
+} ETW_IN_FIELD_TYPE;
+
+typedef enum _ETW_OUT_FIELD_TYPE
+{
+	EtwOutNull,
+	EtwOutNoPrint,
+	EtwOutString,
+	EtwOutBoolean,
+	EtwOutHex,
+	EtwOutPid,
+	EtwOutTid,
+	EtwOutPort,
+	EtwOutIpV4,
+	EtwOutIpV6,
+	EtwOutSocketAddress,
+	EtwOutXml,
+	EtwOutJson,
+	EtwOutWin32Error,
+	EtwOutNtstatus,
+	EtwOutHresult,
+	EtwOutFiletime,
+	EtwOutSigned,
+	EtwOutUnsigned,
+} ETW_OUT_FIELD_TYPE;
+
 typedef enum _ETW_FIELD_TYPE
 {
-	EtwFieldNull,
-	EtwFieldUnicodeString,
-	EtwFieldAnsiString,
-	EtwFieldInt8,
-	EtwFieldUInt8,
-	EtwFieldInt16,
-	EtwFieldUInt16,
-	EtwFieldInt32,
-	EtwFieldUInt32,
-	EtwFieldInt64,
-	EtwFieldUInt64,
-	EtwFieldFloat,
-	EtwFieldDouble,
-	EtwFieldBool32,
-	EtwFieldBinary,
-	EtwFieldGuid,
-	EtwFieldPointer,
-	EtwFieldFiletime,
-	EtwFieldSystemTime,
-	EtwFieldSid,
-	EtwFieldHexInt32,
-	EtwFieldHexInt64,
-	EtwFieldPid = (EtwFieldInt32 | 0x05 << 8),
+	EtwFieldInt8 = EtwInInt8,
+	EtwFieldUInt8 = EtwInUInt8,
+	EtwFieldInt16 = EtwInInt16,
+	EtwFieldUInt16 = EtwInUInt16,
+	EtwFieldInt32 = EtwInInt32,
+	EtwFieldUInt32 = EtwInUInt32,
+	EtwFieldInt64 = EtwInInt64,
+	EtwFieldUInt64 = EtwInUInt64,
+	EtwFieldFloat32 = EtwInFloat,
+	EtwFieldFloat64 = EtwInDouble,
+	EtwFieldBool = EtwInBool32,
+	EtwFieldGuid = EtwInGuid,
+	EtwFieldPointer = EtwInPointer,
+	EtwFieldFiletime = EtwInFiletime,
+	EtwFieldSystemTime = EtwInSystemTime,
+	EtwFieldHexInt8 = ETW_FIELD(EtwInUInt8, EtwOutHex),
+	EtwFieldHexUInt8 = ETW_FIELD(EtwInUInt8, EtwOutHex),
+	EtwFieldHexInt32 = EtwInHexInt32,
+	EtwFieldHexUInt32 = EtwInHexInt32,
+	EtwFieldHexInt64 = EtwInHexInt64,
+	EtwFieldHexUInt64 = EtwInHexInt64,
+	EtwFieldWChar = ETW_FIELD(EtwInUInt16, EtwOutString),
+	EtwFieldChar = ETW_FIELD(EtwInUInt8, EtwOutString),
+	EtwFieldBoolean = ETW_FIELD(EtwInUInt8, EtwOutBoolean),
+	EtwFieldHexInt16 = ETW_FIELD(EtwInUInt16, EtwOutHex),
+	EtwFieldHexUInt16 = ETW_FIELD(EtwInUInt16, EtwOutHex),
+	EtwFieldPid = ETW_FIELD(EtwInUInt32, EtwOutPid),
+	EtwFieldTid = ETW_FIELD(EtwInUInt32, EtwOutTid),
+	EtwFieldPort = ETW_FIELD(EtwInUInt16, EtwOutPort),
+	EtwFieldWinError = ETW_FIELD(EtwInUInt32, EtwOutWin32Error),
+	EtwFieldNtstatus = ETW_FIELD(EtwInUInt32, EtwOutNtstatus),
+	EtwFieldHresult = ETW_FIELD(EtwInInt32, EtwOutHresult),
+	EtwFieldString = EtwInAnsiString,
+	EtwFieldWideString = EtwInUnicodeString,
+	EtwFieldCountedString = EtwInCountedAnsiString,
+	EtwFieldCountedWideString = EtwFieldCountedString,
+	EtwFieldAnsiString = EtwInCountedAnsiString,
+	EtwFieldUnicodeString = EtwInCountedString,
+	EtwFieldBinary = EtwInBinary,
+	EtwFieldSocketAddress = ETW_FIELD(EtwInBinary, EtwOutSocketAddress),
+	EtwFieldSid = EtwInSid,
 } ETW_FIELD_TYPE;
 
 namespace detail
@@ -164,12 +239,10 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 	for (auto i = 0; i < numberOfFields; i++)
 	{
 		va_arg(args, const char*);
-		const auto fieldType = va_arg(args, int);
-		auto fieldValue = va_arg(args, size_t);
+		const auto fieldType = va_arg(args, ETW_FIELD_TYPE);
+		const auto fieldValue = va_arg(args, size_t);
 
-		dataDescriptors[i + 2] = CreateTraceProperty(
-			fieldType,
-			fieldType != EtwFieldAnsiString ? &fieldValue : (void*)fieldValue);
+		dataDescriptors[i + 2] = CreateTraceProperty(fieldType, GetFieldAddress(fieldType, fieldValue));
 		if (dataDescriptors[i + 2].Ptr == NULL)
 		{
 			return STATUS_UNSUCCESSFUL;
@@ -208,61 +281,80 @@ EtwProviderEvent* EtwProvider::FindEvent(const char* eventName)
 	return NULL;
 }
 
-size_t EtwProvider::SizeOfField(int fieldType, void* fieldValue)
+size_t EtwProvider::SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue)
 {
 	size_t sizeOfField = 0;
 
-	switch (fieldType & 0x000000FF)
+	// Size is determined by the in type, see TraceLoggingProvider.h#L1773
+	// (as of SDK 10.0.14393.0).
+	switch (ETW_IN_TYPE(fieldType) & 0x7f)
 	{
-	case EtwFieldUnicodeString:
+	case EtwInNull:
+		sizeOfField = 0;
+		break;
+	case EtwInUnicodeString:
 		sizeOfField = (wcslen((wchar_t*)fieldValue) + 1) * sizeof(wchar_t);
 		break;
-	case EtwFieldAnsiString:
+	case EtwInAnsiString:
 		sizeOfField = strlen((char*)fieldValue) + 1;
 		break;
-	case EtwFieldInt8:
+	case EtwInInt8:
 		sizeOfField = sizeof(int8_t);
 		break;
-	case EtwFieldUInt8:
+	case EtwInUInt8:
 		sizeOfField = sizeof(uint8_t);
 		break;
-	case EtwFieldInt16:
+	case EtwInInt16:
 		sizeOfField = sizeof(int16_t);
 		break;
-	case EtwFieldUInt16:
+	case EtwInUInt16:
 		sizeOfField = sizeof(uint16_t);
 		break;
-	case EtwFieldInt32:
+	case EtwInInt32:
 		sizeOfField = sizeof(int32_t);
 		break;
-	case EtwFieldUInt32:
+	case EtwInUInt32:
 		sizeOfField = sizeof(uint32_t);
 		break;
-	case EtwFieldInt64:
+	case EtwInInt64:
 		sizeOfField = sizeof(int64_t);
 		break;
-	case EtwFieldUInt64:
+	case EtwInUInt64:
 		sizeOfField = sizeof(uint64_t);
 		break;
-	case EtwFieldFloat:
+	case EtwInFloat:
 		sizeOfField = sizeof(float);
 		break;
-	case EtwFieldDouble:
+	case EtwInDouble:
 		sizeOfField = sizeof(double);
 		break;
-	case EtwFieldBool32:
+	case EtwInBool32:
 		sizeOfField = sizeof(int32_t);
 		break;
-	case EtwFieldGuid:
+	case EtwInGuid:
 		sizeOfField = sizeof(GUID);
 		break;
-	case EtwFieldHexInt32:
+	case EtwInFiletime:
+		sizeOfField = sizeof(DWORD) * 2;
+		break;
+	case EtwInSystemTime:
+		sizeOfField = sizeof(uint16_t) * 8;
+		break;
+	case EtwInSid:
+		sizeOfField = sizeof(SID);
+		break;
+	case EtwInHexInt32:
 		sizeOfField = sizeof(int32_t);
 		break;
-	case EtwFieldHexInt64:
+	case EtwInHexInt64:
 		sizeOfField = sizeof(int64_t);
 		break;
-	// TODO: more fields
+	case EtwInCountedString:
+		sizeOfField = ((PUNICODE_STRING)fieldValue)->Length;
+		break;
+	case EtwInCountedAnsiString:
+		sizeOfField = ((PSTRING)fieldValue)->Length;
+		break;
 	default:
 		sizeOfField = 0;
 		break;
@@ -271,7 +363,27 @@ size_t EtwProvider::SizeOfField(int fieldType, void* fieldValue)
 	return sizeOfField;
 }
 
-EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(int fieldType, void* fieldValue)
+void* EtwProvider::GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue)
+{
+	// Get the address of the field value for the field's descriptor.
+	//
+	// Scalar values are provided as-is, so we want to the address of them,
+	// whereas string values already come through as pointers to the value.
+	switch (ETW_IN_TYPE(fieldType))
+	{
+	case EtwInAnsiString:
+	case EtwInUnicodeString:
+		return (void*)fieldValue;
+	case EtwInCountedAnsiString:
+		return (void*)(((PSTRING)fieldValue)->Buffer);
+	case EtwInCountedString:
+		return (void*)(((PUNICODE_STRING)fieldValue)->Buffer);
+	default:
+		return (void*)&fieldValue;
+	}
+}
+
+EVENT_DATA_DESCRIPTOR EtwProvider::CreateTraceProperty(ETW_FIELD_TYPE fieldType, void* fieldValue)
 {
 	// Copy the input value to its own space.
 	EVENT_DATA_DESCRIPTOR fieldDesc;
@@ -310,19 +422,28 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	// * The name of the event
 	// * An array of field metadata structures, which are:
 	//     * the name of the field
-	//     * a single byte for the type.
+	//     * a single byte for the in type
+	//     * an optional byte for the out type, if defined
 	const auto eventMetadataHeaderLength = strlen(eventName) + 1 + sizeof(uint16_t) + sizeof(uint8_t);
 
 	// Calculate the total size to allocate for the event metadata - the size
-	// of the header plus the sum of length of each field name and the type byte.
+	// of the header plus the sum of length of each field name and the type byte(s).
 	va_list args;
 	va_copy(args, fields);
 	auto eventMetadataLength = (uint16_t)eventMetadataHeaderLength;
 	for (auto i = 0; i < numberOfFields; i++)
 	{
 		const auto fieldName = va_arg(args, const char*);
-		eventMetadataLength += (uint16_t)(strlen(fieldName) + 1 + sizeof(uint8_t));
-		va_arg(args, int);
+		eventMetadataLength += (uint16_t)(strlen(fieldName) + 1);
+
+		// If the field has an out type, then we need an additional byte for that.
+		eventMetadataLength += sizeof(uint8_t);
+		const auto fieldType = va_arg(args, ETW_FIELD_TYPE);
+		if (ETW_FIELD_HAS_OUT_TYPE(fieldType))
+		{
+			eventMetadataLength += sizeof(uint8_t);
+		}
+
 		va_arg(args, void*);
 	}
 	va_end(args);
@@ -346,13 +467,22 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	for (auto i = 0; i < numberOfFields; i++)
 	{
 		const auto fieldName = va_arg(args, const char*);
-		const auto fieldType = va_arg(args, int);
+		const auto fieldType = va_arg(args, ETW_FIELD_TYPE);
 		va_arg(args, void*);
 
+		// Copy the field name to the start of the metadata entry.
 		strcpy(currentLocation, fieldName);
-		currentLocation[strlen(fieldName) + 1] = (uint8_t)fieldType;
+		currentLocation += strlen(fieldName) + 1;
 
-		currentLocation += strlen(fieldName) + 1 + sizeof(uint8_t);
+		// Set the type byte(s). The in type is always set, the out type
+		// is only set if it is defined.
+		*currentLocation = ETW_IN_TYPE(fieldType);
+		++currentLocation;
+		if (ETW_FIELD_HAS_OUT_TYPE(fieldType))
+		{
+			*currentLocation = ETW_OUT_TYPE(fieldType);
+			++currentLocation;
+		}
 	}
 	va_end(args);
 

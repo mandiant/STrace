@@ -5,6 +5,8 @@
 namespace detail
 {
 
+enum ETW_FIELD_TYPE : int;
+
 class EtwProviderEvent
 {
 public:
@@ -51,8 +53,9 @@ private:
 	};
 
 	EtwProviderEvent* FindEvent(const char* eventName);
-	static size_t SizeOfField(int fieldType, void* fieldValue);
-	static EVENT_DATA_DESCRIPTOR CreateTraceProperty(int fieldType, void* fieldValue);
+	static size_t SizeOfField(ETW_FIELD_TYPE fieldType, void* fieldValue);
+	static void* GetFieldAddress(ETW_FIELD_TYPE fieldType, const size_t& fieldValue);
+	static EVENT_DATA_DESCRIPTOR CreateTraceProperty(ETW_FIELD_TYPE fieldType, void* fieldValue);
 
 	LPCGUID m_guid;
 	REGHANDLE m_regHandle;

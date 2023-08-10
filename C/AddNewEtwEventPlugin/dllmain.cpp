@@ -965,7 +965,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 			EtwFieldPid, /* Field_1 Type */
 			(int32_t)callerinfo.processId, /* Field_1 Value */
 			"Execname", /* Field_2 Name */
-			EtwFieldAnsiString, /* Field_2 Type */
+			EtwFieldString, /* Field_2 Type */
 			(const char*)callerinfo.processName, /* Field_2 Value */
 			"ProbeId", /* Field_3 Name */
 			EtwFieldUInt32, /* Field_3 Type */
