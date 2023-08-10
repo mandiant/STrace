@@ -120,9 +120,9 @@ EtwProvider::EtwProvider(LPCGUID providerGuid) : m_guid(providerGuid), m_regHand
 
 EtwProvider::EtwProvider(EtwProvider&& other)
 {
-	m_guid = move(other.m_guid);
-	m_regHandle = move(other.m_regHandle);
-	m_providerMetadataDesc = move(other.m_providerMetadataDesc);
+	m_guid = other.m_guid;
+	m_regHandle = other.m_regHandle;
+	m_providerMetadataDesc = other.m_providerMetadataDesc;
 	m_events = move(other.m_events);
 }
 
