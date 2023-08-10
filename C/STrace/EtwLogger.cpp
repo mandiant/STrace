@@ -188,6 +188,7 @@ void EtwProvider::Destruct()
 	if (m_providerMetadataDesc.Ptr != NULL)
 	{
 		ExFreePool((PVOID)m_providerMetadataDesc.Ptr);
+		m_providerMetadataDesc.Ptr = NULL;
 	}
 }
 
@@ -498,6 +499,7 @@ void EtwProviderEvent::Destruct()
 	if (m_eventMetadataDesc.Ptr != NULL)
 	{
 		ExFreePool((PVOID)m_eventMetadataDesc.Ptr);
+		m_eventMetadataDesc.Ptr = NULL;
 	}
 }
 
