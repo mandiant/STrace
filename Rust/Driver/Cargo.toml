@@ -26,11 +26,18 @@ crate-type = ["cdylib"]
 [dependencies]
 utf16_lit = "2.0.2"
 bitflags = "1.2.1"
-memoffset = "0.6"
-spin = {version = "*", default-features=false}
+memoffset = "0.9"
+
+[dependencies.spin]
+version = "*"
+default-features=false
+features = [
+    "mutex",
+    "spin_mutex",
+]
 
 [dependencies.ntapi]
-version = "0.3.6"
+version = "0.4.1"
 default-features = false
 features = [
     "impl-default",
