@@ -6,19 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pdb = "0.7"
 regex = "1"
-goblin ="0.5"
+goblin ="0.7"
 reqwest = "0.11"
-tokio = { version = "1.18", features = ["full"] }
+tokio = { version = "*", features = ["full"] }
 bytes = "1.1"
 anyhow = "1"
 hex = "0.4"
-pdb-addr2line = "0.7"
-ouroboros = "0.15"
-symbolic-demangle = "8.7.0"
-symbolic-common = "8.7.0"
+pdb-addr2line = "0.10"
+ouroboros = "0.17"
+symbolic-demangle = "12"
+symbolic-common = "12"
 futures = "0.3.21"
 clap = "3"
 rangemap = { version = "1", features = ["serde1"] }
-indicatif = "0.16.2"
+indicatif = "0.16"

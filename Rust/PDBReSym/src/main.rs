@@ -3,7 +3,6 @@ use bytes::{Bytes, BytesMut};
 use futures::{prelude::*, stream::iter};
 use futures::{stream, Stream, StreamExt};
 use ouroboros::self_referencing;
-use pdb::{Error, Source};
 use rangemap::RangeMap;
 use regex::Regex;
 use tokio::io::AsyncWriteExt;
@@ -20,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
     vec::Vec,
 };
+use pdb_addr2line::pdb::{Error, Source, self};
 use symbolic_common::{Language, Name, NameMangling};
 use symbolic_demangle::{Demangle, DemangleOptions};
 use tokio::fs::DirEntry;
