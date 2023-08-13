@@ -7,6 +7,8 @@
 // Cache of all created providers.
 MyVector<detail::EtwProvider> g_ProviderCache;
 
+#pragma region ETW_FIELD_TYPE
+
 // ETW field type definitions, see TlgIn_t and TlgOut_t in TraceLoggingProvider.h
 #define ETW_FIELD(in, out)  (in | 0x80 | out << 8)
 #define ETW_FIELD_HAS_OUT_TYPE(field) ((field & 0x80) == 0x80)
@@ -108,6 +110,8 @@ typedef enum _ETW_FIELD_TYPE
 	EtwFieldSocketAddress = ETW_FIELD(EtwInBinary, EtwOutSocketAddress),
 	EtwFieldSid = EtwInSid,
 } ETW_FIELD_TYPE;
+
+#pragma endregion
 
 namespace detail
 {
