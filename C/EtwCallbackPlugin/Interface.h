@@ -61,6 +61,7 @@ typedef LONG NTSTATUS;
 typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
 typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
+typedef NTSTATUS(*tEtwTraceApi)(const char* providerName, const GUID* providerGuid, const char* eventName, int eventLevel, uint64_t flag, int numberOfFields, ...);
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
@@ -112,6 +113,105 @@ typedef enum _LOG_LEVEL_OPTIONS
 	LogLevelWarn = 0x40ul,
 	LogLevelError = 0x80ul,
 } LOG_LEVEL_OPTIONS;
+
+// ETW field type definitions, see TlgIn_t and TlgOut_t in TraceLoggingProvider.h
+#define ETW_FIELD(in, out)  (in | 0x80 | out << 8)
+
+typedef enum _ETW_IN_FIELD_TYPE
+{
+	EtwInNull,
+	EtwInUnicodeString,
+	EtwInAnsiString,
+	EtwInInt8,
+	EtwInUInt8,
+	EtwInInt16,
+	EtwInUInt16,
+	EtwInInt32,
+	EtwInUInt32,
+	EtwInInt64,
+	EtwInUInt64,
+	EtwInFloat,
+	EtwInDouble,
+	EtwInBool32,
+	EtwInBinary,
+	EtwInGuid,
+	EtwInPointer,
+	EtwInFiletime,
+	EtwInSystemTime,
+	EtwInSid,
+	EtwInHexInt32,
+	EtwInHexInt64,
+	EtwInCountedString,
+	EtwInCountedAnsiString,
+} ETW_IN_FIELD_TYPE;
+
+typedef enum _ETW_OUT_FIELD_TYPE
+{
+	EtwOutNull,
+	EtwOutNoPrint,
+	EtwOutString,
+	EtwOutBoolean,
+	EtwOutHex,
+	EtwOutPid,
+	EtwOutTid,
+	EtwOutPort,
+	EtwOutIpV4,
+	EtwOutIpV6,
+	EtwOutSocketAddress,
+	EtwOutXml,
+	EtwOutJson,
+	EtwOutWin32Error,
+	EtwOutNtstatus,
+	EtwOutHresult,
+	EtwOutFiletime,
+	EtwOutSigned,
+	EtwOutUnsigned,
+} ETW_OUT_FIELD_TYPE;
+
+typedef enum _ETW_FIELD_TYPE
+{
+	EtwFieldInt8 = EtwInInt8,
+	EtwFieldUInt8 = EtwInUInt8,
+	EtwFieldInt16 = EtwInInt16,
+	EtwFieldUInt16 = EtwInUInt16,
+	EtwFieldInt32 = EtwInInt32,
+	EtwFieldUInt32 = EtwInUInt32,
+	EtwFieldInt64 = EtwInInt64,
+	EtwFieldUInt64 = EtwInUInt64,
+	EtwFieldFloat32 = EtwInFloat,
+	EtwFieldFloat64 = EtwInDouble,
+	EtwFieldBool = EtwInBool32,
+	EtwFieldGuid = EtwInGuid,
+	EtwFieldPointer = EtwInPointer,
+	EtwFieldFiletime = EtwInFiletime,
+	EtwFieldSystemTime = EtwInSystemTime,
+	EtwFieldHexInt8 = ETW_FIELD(EtwInUInt8, EtwOutHex),
+	EtwFieldHexUInt8 = ETW_FIELD(EtwInUInt8, EtwOutHex),
+	EtwFieldHexInt32 = EtwInHexInt32,
+	EtwFieldHexUInt32 = EtwInHexInt32,
+	EtwFieldHexInt64 = EtwInHexInt64,
+	EtwFieldHexUInt64 = EtwInHexInt64,
+	EtwFieldWChar = ETW_FIELD(EtwInUInt16, EtwOutString),
+	EtwFieldChar = ETW_FIELD(EtwInUInt8, EtwOutString),
+	EtwFieldBoolean = ETW_FIELD(EtwInUInt8, EtwOutBoolean),
+	EtwFieldHexInt16 = ETW_FIELD(EtwInUInt16, EtwOutHex),
+	EtwFieldHexUInt16 = ETW_FIELD(EtwInUInt16, EtwOutHex),
+	EtwFieldPid = ETW_FIELD(EtwInUInt32, EtwOutPid),
+	EtwFieldTid = ETW_FIELD(EtwInUInt32, EtwOutTid),
+	EtwFieldPort = ETW_FIELD(EtwInUInt16, EtwOutPort),
+	EtwFieldWinError = ETW_FIELD(EtwInUInt32, EtwOutWin32Error),
+	EtwFieldNtstatus = ETW_FIELD(EtwInUInt32, EtwOutNtstatus),
+	EtwFieldHresult = ETW_FIELD(EtwInInt32, EtwOutHresult),
+	EtwFieldString = EtwInAnsiString,
+	EtwFieldWideString = EtwInUnicodeString,
+	EtwFieldCountedString = EtwInCountedAnsiString,
+	EtwFieldCountedWideString = EtwFieldCountedString,
+	EtwFieldAnsiString = EtwInCountedAnsiString,
+	EtwFieldUnicodeString = EtwInCountedString,
+	EtwFieldBinary = EtwInBinary,
+	EtwFieldSocketAddress = ETW_FIELD(EtwInBinary, EtwOutSocketAddress),
+	EtwFieldSid = EtwInSid,
+} ETW_FIELD_TYPE;
 
 // Assert a function is the same type as a function pointer typedef, or throw msg as a compiler error
 #define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(std::is_same_v<decltype(&Implementer), tFnTypeDef>, msg); 
