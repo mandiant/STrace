@@ -214,7 +214,7 @@ NTSTATUS EtwProvider::AddEvent(const char* eventName, int numberOfFields, va_lis
 	return status;
 }
 
-NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint64_t keyword, int numberOfFields, va_list fields)
+NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint8_t eventChannel, uint64_t keyword, int numberOfFields, va_list fields)
 {
 	// Find the event to use.
 	const auto event = FindEvent(eventName);
@@ -258,7 +258,7 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 	// Create the event descriptor.
 	EVENT_DESCRIPTOR eventDescriptor;
 	memset(&eventDescriptor, 0, sizeof(EVENT_DESCRIPTOR));
-	eventDescriptor.Channel = 11;  // All "manifest-free" events should go to channel 11 by default
+	eventDescriptor.Channel = eventChannel;
 	eventDescriptor.Keyword = keyword;
 	eventDescriptor.Level = eventLevel;
 
@@ -547,6 +547,7 @@ NTSTATUS EtwTrace(
 	const GUID* providerGuid,
 	const char* eventName,
 	uint8_t eventLevel,
+	uint8_t eventChannel,
 	uint64_t keyword,
 	int numberOfFields,
 	...
@@ -587,7 +588,7 @@ NTSTATUS EtwTrace(
 	// Write the event.
 	va_list args2;
 	va_start(args2, numberOfFields);
-	status = etwProvider->WriteEvent(eventName, eventLevel, keyword, numberOfFields, args2);
+	status = etwProvider->WriteEvent(eventName, eventLevel, eventChannel, keyword, numberOfFields, args2);
 	va_end(args2);
 
 	return status;

@@ -959,6 +959,7 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 			&ProviderGuid, /* Provider GUID */
 			"My custom event from DTrace", /* Event Name */
 			1, /* Event Level (0 - 5) */
+			11, /* Event channel */
 			0x0000000000000020, /* Flag */
 			3, /* Number of fields */
 			"PID", /* Field_1 Name */

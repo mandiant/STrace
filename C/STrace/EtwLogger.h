@@ -41,7 +41,7 @@ public:
 
 	NTSTATUS Initialize(const char* name);
 	NTSTATUS AddEvent(const char* eventName, int numberOfFields, va_list fields);
-	NTSTATUS WriteEvent(const char* eventName, uint8_t eventLevel, uint64_t keyword, int numberOfFields, va_list fields);
+	NTSTATUS WriteEvent(const char* eventName, uint8_t eventLevel, uint8_t eventChannel, uint64_t keyword, int numberOfFields, va_list fields);
 
 	LPCGUID Guid() const;
 
@@ -73,6 +73,7 @@ NTSTATUS EtwTrace(
 	const GUID* providerGuid,
 	const char* eventName,
 	uint8_t eventLevel,
+	uint8_t eventChannel,
 	uint64_t keyword,
 	int numberOfFields,
 	...
