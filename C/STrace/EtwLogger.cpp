@@ -259,9 +259,17 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 	eventDescriptor.Level = eventLevel;
 
 	// Write the event.
-	return EtwWrite(m_regHandle, &eventDescriptor, NULL, numberOfDescriptors, dataDescriptors);
+	const auto status = EtwWrite(m_regHandle, &eventDescriptor, NULL, numberOfDescriptors, dataDescriptors);
 
-	// TODO: This leaks the memory allocated for the field descriptors
+	// Free the memory allocated for the event fields.
+	for (auto i = 2; i < numberOfDescriptors; i++)
+	{
+		ExFreePool((PVOID)dataDescriptors[i].Ptr);
+		dataDescriptors[i].Ptr = NULL;
+	}
+	ExFreePool(dataDescriptors);
+
+	return status;
 }
 
 LPCGUID EtwProvider::Guid() const
