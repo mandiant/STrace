@@ -38,6 +38,7 @@ public:
 typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
 typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
 typedef NTSTATUS(*tLogPrintApi)(uint32_t Level, const char* FunctionName, const char* Format, ...);
+typedef NTSTATUS(*tEtwTraceApi)(const char* providerName, const GUID* providerGuid, const char* eventName, uint8_t eventLevel, uint8_t eventChannel, uint64_t keyword, int numberOfFields, ...);
 typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
@@ -48,13 +49,14 @@ typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress,
 class PluginApis {
 public:
 	PluginApis() = default;
-	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tSetCallbackApi setCallback, tUnSetCallbackApi unsetCallback, 
-		tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback, tTraceAccessMemory accessMemory,
-		tSetTlsData setTlsData, tGetTlsData getTlsData) {
+	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tEtwTraceApi etwTrace, tSetCallbackApi setCallback,
+		tUnSetCallbackApi unsetCallback, tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback,
+		tTraceAccessMemory accessMemory, tSetTlsData setTlsData, tGetTlsData getTlsData) {
 
 		pSetTlsData = setTlsData;
 		pGetTlsData = getTlsData;
 		pLogPrint = print;
+		pEtwTrace = etwTrace;
 		pSetCallback = setCallback;
 		pUnsetCallback = unsetCallback;
 		pEtwSetCallback = etwSetCallback;
@@ -66,6 +68,7 @@ public:
 	tSetTlsData pSetTlsData;
 	tGetTlsData pGetTlsData;
 	tLogPrintApi pLogPrint;
+	tEtwTraceApi pEtwTrace;
 	tSetCallbackApi pSetCallback;
 	tUnSetCallbackApi pUnsetCallback;
 	tSetEtwCallbackApi pEtwSetCallback;
@@ -289,4 +292,17 @@ typedef void(*tStpInitialize)(PluginApis& pApis);
 typedef void(*tStpDeInitialize)();
 
 // Assert a function is the same type as a function pointer typedef, or throw msg as a compiler error
-#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(is_same_v<decltype(&Implementer), tFnTypeDef>, msg); 
+#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(is_same_v<decltype(&Implementer), tFnTypeDef>, msg);
+
+// std::move reimplementation
+// <https://en.cppreference.com/w/cpp/types/remove_reference>
+template<typename T> struct remove_reference { typedef T type; };
+template<typename T> struct remove_reference<T&> { typedef T type; };
+template<typename T> struct remove_reference<T&&> { typedef T type; };
+
+// <https://stackoverflow.com/a/7518365>
+template<typename T>
+typename remove_reference<T>::type&& move(T&& arg)
+{
+	return static_cast<typename remove_reference<T>::type&&>(arg);
+}

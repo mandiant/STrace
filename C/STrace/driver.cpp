@@ -3,6 +3,7 @@
 #include <ntstatus.h>
 
 #include "Etw.h"
+#include "EtwLogger.h"
 #include "DynamicTrace.h"
 #include "Logger.h"
 #include "ManualMap.h"
@@ -402,7 +403,7 @@ NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
         
         if (pluginData.pInitialize) {
             // The plugin must immediately copy this structure. It must be a local to avoid C++ static initializers, which are created if its a global
-            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory, &SetTLSData, &GetTLSData);
+            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &EtwTrace, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory, &SetTLSData, &GetTLSData);
             pluginData.pInitialize(pluginApis);
 
             // prevent double initialize regardless of rest
@@ -534,6 +535,15 @@ Return Value:
 --*/
 {
     UNICODE_STRING  DosDevicesLinkName;
+
+    //
+    // Unregister any registered ETW providers.
+    //
+    for (auto i = 0; i < g_ProviderCache.len(); i++)
+    {
+        g_ProviderCache[i].Destruct();
+    }
+    g_ProviderCache.Destruct();
 
     //
     // Delete the link from our device name to a name in the Win32 namespace.
