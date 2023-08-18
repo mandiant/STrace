@@ -11,7 +11,7 @@ class EtwProviderEvent
 {
 public:
 	EtwProviderEvent();
-	void Destruct();
+	~EtwProviderEvent();
 
 	NTSTATUS Initialize(const char* eventName, int numberOfFields, va_list fields);
 
@@ -34,10 +34,11 @@ class EtwProvider
 public:
 	EtwProvider(LPCGUID providerGuid);
 	EtwProvider(const EtwProvider& other) = delete;
-	EtwProvider(EtwProvider&& other);
 	EtwProvider& operator=(const EtwProvider& other) = delete;
+	EtwProvider(EtwProvider&& other);
 	EtwProvider& operator=(EtwProvider&& other);
-	void Destruct();
+
+	~EtwProvider();
 
 	NTSTATUS Initialize(const char* name);
 	NTSTATUS AddEvent(const char* eventName, int numberOfFields, va_list fields);

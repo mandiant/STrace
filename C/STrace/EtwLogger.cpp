@@ -132,9 +132,9 @@ EtwProvider::EtwProvider(EtwProvider&& other)
 
 EtwProvider& EtwProvider::operator=(EtwProvider&& other)
 {
-	m_guid = move(other.m_guid);
-	m_regHandle = move(other.m_regHandle);
-	m_providerMetadataDesc = move(other.m_providerMetadataDesc);
+	m_guid = other.m_guid;
+	m_regHandle = other.m_regHandle;
+	m_providerMetadataDesc = other.m_providerMetadataDesc;
 	m_events = move(other.m_events);
 
 	return *this;
@@ -176,12 +176,8 @@ NTSTATUS EtwProvider::Initialize(const char* providerName)
 	return STATUS_SUCCESS;
 }
 
-void EtwProvider::Destruct()
+EtwProvider::~EtwProvider()
 {
-	for (auto i = 0; i < m_events.len(); i++)
-	{
-		m_events[i].Destruct();
-	}
 	m_events.Destruct();
 
 	if (m_regHandle != 0)
@@ -250,6 +246,7 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 		dataDescriptors[i + 2] = CreateTraceProperty(fieldType, GetFieldAddress(fieldType, fieldValue));
 		if (dataDescriptors[i + 2].Ptr == NULL)
 		{
+			va_end(args);
 			return STATUS_UNSUCCESSFUL;
 		}
 	}
@@ -508,7 +505,7 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	return STATUS_SUCCESS;
 }
 
-void EtwProviderEvent::Destruct()
+EtwProviderEvent::~EtwProviderEvent()
 {
 	if (m_eventMetadataDesc.Ptr != NULL)
 	{
@@ -566,26 +563,29 @@ NTSTATUS EtwTrace(
 	auto etwProvider = FindProvider(providerGuid);
 	if (etwProvider == NULL)
 	{
-		detail::EtwProvider newEtwProvider{ providerGuid };
-		const auto status = newEtwProvider.Initialize(providerName);
+		// emplace so we don't call dtor on a temporary
+		g_ProviderCache.emplace_back(providerGuid);
+		etwProvider = &g_ProviderCache.back();
+
+		// initialize the class here
+		const auto status = etwProvider->Initialize(providerName);
 		if (status != STATUS_SUCCESS)
 		{
+			// oof failed, remove paritally init'd object
+			g_ProviderCache.pop_back();
 			return status;
 		}
-
-		g_ProviderCache.push_back(move(newEtwProvider));
-		etwProvider = &g_ProviderCache.back();
 	}
 
 	// Add the event to the provider.
 	va_list args;
 	va_start(args, numberOfFields);
 	auto status = etwProvider->AddEvent(eventName, numberOfFields, args);
+	va_end(args);
 	if (status != STATUS_SUCCESS)
 	{
 		return status;
 	}
-	va_end(args);
 
 	// Write the event.
 	va_list args2;
