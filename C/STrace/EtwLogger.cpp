@@ -268,8 +268,10 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 	// Free the memory allocated for the event fields.
 	for (auto i = 2; i < numberOfDescriptors; i++)
 	{
-		ExFreePool((PVOID)dataDescriptors[i].Ptr);
-		dataDescriptors[i].Ptr = NULL;
+		if (dataDescriptors[i].Ptr) {
+			ExFreePool((PVOID)dataDescriptors[i].Ptr);
+			dataDescriptors[i].Ptr = NULL;
+		}
 	}
 	ExFreePool(dataDescriptors);
 
