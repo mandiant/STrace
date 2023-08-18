@@ -132,9 +132,9 @@ EtwProvider::EtwProvider(EtwProvider&& other)
 
 EtwProvider& EtwProvider::operator=(EtwProvider&& other)
 {
-	m_guid = move(other.m_guid);
-	m_regHandle = move(other.m_regHandle);
-	m_providerMetadataDesc = move(other.m_providerMetadataDesc);
+	m_guid = other.m_guid;
+	m_regHandle = other.m_regHandle;
+	m_providerMetadataDesc = other.m_providerMetadataDesc;
 	m_events = move(other.m_events);
 
 	return *this;
@@ -178,10 +178,6 @@ NTSTATUS EtwProvider::Initialize(const char* providerName)
 
 void EtwProvider::Destruct()
 {
-	for (auto i = 0; i < m_events.len(); i++)
-	{
-		m_events[i].Destruct();
-	}
 	m_events.Destruct();
 
 	if (m_regHandle != 0)
@@ -508,7 +504,7 @@ NTSTATUS EtwProviderEvent::Initialize(const char* eventName, int numberOfFields,
 	return STATUS_SUCCESS;
 }
 
-void EtwProviderEvent::Destruct()
+EtwProviderEvent::~EtwProviderEvent()
 {
 	if (m_eventMetadataDesc.Ptr != NULL)
 	{

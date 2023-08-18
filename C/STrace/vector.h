@@ -68,6 +68,11 @@ public:
 		data[size++] = move(item);
 	}
 
+	template<typename... Args>
+	void emplace_back(Args&&... args) {
+		push_back(T(args...));
+	}
+
 	void pop_back() {
 		data[size].T::~T();
 		size--;
