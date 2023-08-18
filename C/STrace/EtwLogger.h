@@ -38,7 +38,7 @@ public:
 	EtwProvider(EtwProvider&& other);
 	EtwProvider& operator=(EtwProvider&& other);
 
-	void Destruct();
+	~EtwProvider();
 
 	NTSTATUS Initialize(const char* name);
 	NTSTATUS AddEvent(const char* eventName, int numberOfFields, va_list fields);

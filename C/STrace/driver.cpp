@@ -539,10 +539,6 @@ Return Value:
     //
     // Unregister any registered ETW providers.
     //
-    for (auto i = 0; i < g_ProviderCache.len(); i++)
-    {
-        g_ProviderCache[i].Destruct();
-    }
     g_ProviderCache.Destruct();
 
     //

@@ -70,7 +70,7 @@ public:
 
 	template<typename... Args>
 	void emplace_back(Args&&... args) {
-		push_back(T(args...));
+		push_back(move(T(args...)));
 	}
 
 	void pop_back() {

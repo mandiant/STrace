@@ -176,7 +176,7 @@ NTSTATUS EtwProvider::Initialize(const char* providerName)
 	return STATUS_SUCCESS;
 }
 
-void EtwProvider::Destruct()
+EtwProvider::~EtwProvider()
 {
 	m_events.Destruct();
 
@@ -246,6 +246,7 @@ NTSTATUS EtwProvider::WriteEvent(const char* eventName, uint8_t eventLevel, uint
 		dataDescriptors[i + 2] = CreateTraceProperty(fieldType, GetFieldAddress(fieldType, fieldValue));
 		if (dataDescriptors[i + 2].Ptr == NULL)
 		{
+			va_end(args);
 			return STATUS_UNSUCCESSFUL;
 		}
 	}
@@ -562,26 +563,29 @@ NTSTATUS EtwTrace(
 	auto etwProvider = FindProvider(providerGuid);
 	if (etwProvider == NULL)
 	{
-		detail::EtwProvider newEtwProvider{ providerGuid };
-		const auto status = newEtwProvider.Initialize(providerName);
+		// emplace so we don't call dtor on a temporary
+		g_ProviderCache.emplace_back(providerGuid);
+		etwProvider = &g_ProviderCache.back();
+
+		// initialize the class here
+		const auto status = etwProvider->Initialize(providerName);
 		if (status != STATUS_SUCCESS)
 		{
+			// oof failed, remove paritally init'd object
+			g_ProviderCache.pop_back();
 			return status;
 		}
-
-		g_ProviderCache.push_back(move(newEtwProvider));
-		etwProvider = &g_ProviderCache.back();
 	}
 
 	// Add the event to the provider.
 	va_list args;
 	va_start(args, numberOfFields);
 	auto status = etwProvider->AddEvent(eventName, numberOfFields, args);
+	va_end(args);
 	if (status != STATUS_SUCCESS)
 	{
 		return status;
 	}
-	va_end(args);
 
 	// Write the event.
 	va_list args2;
