@@ -535,7 +535,7 @@ detail::EtwProvider* FindProvider(LPCGUID providerGuid)
 {
 	for (auto i = 0; i < g_ProviderCache.len(); i++)
 	{
-		if (memcmp(providerGuid, g_ProviderCache[i].Guid(), sizeof(GUID) == 0))
+		if (memcmp(providerGuid, g_ProviderCache[i].Guid(), sizeof(GUID)) == 0)
 		{
 			return &g_ProviderCache[i];
 		}
