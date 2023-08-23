@@ -2,11 +2,11 @@ use anyhow::{anyhow, Context, Result};
 use bytes::{Bytes, BytesMut};
 use futures::{prelude::*, stream::iter};
 use futures::{stream, Stream, StreamExt};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use ouroboros::self_referencing;
+use pdb_addr2line::pdb::{self, Error, Source};
 use rangemap::RangeMap;
 use regex::Regex;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::RwLock;
 use std::collections::btree_map::Range;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -19,11 +19,11 @@ use std::{
     path::{Path, PathBuf},
     vec::Vec,
 };
-use pdb_addr2line::pdb::{Error, Source, self};
 use symbolic_common::{Language, Name, NameMangling};
 use symbolic_demangle::{Demangle, DemangleOptions};
 use tokio::fs::DirEntry;
-use indicatif::{ProgressBar, MultiProgress, ProgressStyle, ProgressDrawTarget};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::RwLock;
 mod guid;
 
 fn load_txt_file(txt_file: &Path) -> Option<Vec<String>> {
@@ -88,7 +88,11 @@ async fn get_pdb_cache_path_from_binary(binary_path: &Path, cache_dir: &Path) ->
     });
 }
 
-async fn fetch_pdb(binary_path: &Path, cache_dir: &Path, mpb: Arc<MultiProgress>) -> Result<(Bytes, PDBPaths)> {
+async fn fetch_pdb(
+    binary_path: &Path,
+    cache_dir: &Path,
+    mpb: Arc<MultiProgress>,
+) -> Result<(Bytes, PDBPaths)> {
     let pdb_paths = get_pdb_cache_path_from_binary(binary_path, cache_dir).await?;
 
     if pdb_paths.pdb_cache_file_path.exists() {
@@ -108,17 +112,23 @@ async fn fetch_pdb(binary_path: &Path, cache_dir: &Path, mpb: Arc<MultiProgress>
     let dl_progressbar = mpb.add(ProgressBar::new(total_size));
     dl_progressbar.set_style(get_pb_dl_style());
     dl_progressbar.set_message(format!("Downloading {}", pdb_paths.pdb_filename));
-    dl_progressbar.set_draw_rate(3);
-    
-    let mut downloaded: u64 = 0;
-    tokio::fs::create_dir_all(&pdb_paths.pdb_cache_dir).await.expect("failed to create cache path");
+    dl_progressbar.set_draw_target(ProgressDrawTarget::stderr_with_hz(3));
 
-    let mut file = tokio::fs::File::create(&pdb_paths.pdb_cache_file_path).await.expect("failed to create pdb file");
+    let mut downloaded: u64 = 0;
+    tokio::fs::create_dir_all(&pdb_paths.pdb_cache_dir)
+        .await
+        .expect("failed to create cache path");
+
+    let mut file = tokio::fs::File::create(&pdb_paths.pdb_cache_file_path)
+        .await
+        .expect("failed to create pdb file");
 
     let mut body = BytesMut::with_capacity(total_size as usize);
     while let Some(chunk) = resp.chunk().await? {
         body.extend(&chunk);
-        file.write_all(&chunk).await.expect("Failed to write chunk to pdb file");
+        file.write_all(&chunk)
+            .await
+            .expect("Failed to write chunk to pdb file");
 
         let new = std::cmp::min(downloaded + (chunk.len() as u64), total_size);
         downloaded = new;
@@ -130,8 +140,12 @@ async fn fetch_pdb(binary_path: &Path, cache_dir: &Path, mpb: Arc<MultiProgress>
     Ok((body.freeze(), pdb_paths))
 }
 
-async fn fetch_pe(filename: &str, timedatestamp: u64, sizeofimage: u64, mpb: Arc<MultiProgress>) -> Result<PathBuf> {
-   
+async fn fetch_pe(
+    filename: &str,
+    timedatestamp: u64,
+    sizeofimage: u64,
+    mpb: Arc<MultiProgress>,
+) -> Result<PathBuf> {
     let url = format!(
         "http://msdl.microsoft.com/download/symbols/{}/{:x}{:x}/{}",
         filename, timedatestamp, sizeofimage, filename
@@ -151,18 +165,22 @@ async fn fetch_pe(filename: &str, timedatestamp: u64, sizeofimage: u64, mpb: Arc
     let dl_progressbar = mpb.add(ProgressBar::new(total_size));
     dl_progressbar.set_style(get_pb_dl_style());
     dl_progressbar.set_message(format!("Downloading {}", filename));
-    dl_progressbar.set_draw_rate(3);
+    dl_progressbar.set_draw_target(ProgressDrawTarget::stderr_with_hz(3));
     
     let mut downloaded: u64 = 0;
-    
+
     let cur_folder = env::current_dir().expect("failed to locate current directory");
     let download_path = cur_folder.join(filename);
-    let mut file = tokio::fs::File::create(&download_path).await.expect("failed to create pdb file");
+    let mut file = tokio::fs::File::create(&download_path)
+        .await
+        .expect("failed to create pdb file");
 
     let mut body = BytesMut::with_capacity(total_size as usize);
     while let Some(chunk) = resp.chunk().await? {
         body.extend(&chunk);
-        file.write_all(&chunk).await.expect("Failed to write chunk to pdb file");
+        file.write_all(&chunk)
+            .await
+            .expect("Failed to write chunk to pdb file");
 
         let new = std::cmp::min(downloaded + (chunk.len() as u64), total_size);
         downloaded = new;
@@ -205,7 +223,11 @@ fn visit_dir(
 }
 
 // recursively iterate windows system dir and cache pdb for each file
-async fn build_symbol_cache<'a>(dir: &Path, cache_dir: &Path, mpb: Arc<MultiProgress>) -> Result<()> {
+async fn build_symbol_cache<'a>(
+    dir: &Path,
+    cache_dir: &Path,
+    mpb: Arc<MultiProgress>,
+) -> Result<()> {
     let mut futures = vec![];
     let mut file_stream = Box::pin(visit_dir(dir));
 
@@ -233,20 +255,18 @@ async fn build_symbol_cache<'a>(dir: &Path, cache_dir: &Path, mpb: Arc<MultiProg
     cache_progressbar.set_style(get_pb_style());
     cache_progressbar.set_message("Caching sysdir PDBs");
 
-    let mpb_clone = mpb.clone();
-    tokio::task::spawn_blocking(move || {
-      let _ = mpb_clone.join(); // polls the drawers
-    });
-
     // wait up to X futures concurrently
-    let _results = futures::stream::iter(futures).then(|fut| {
-        let cache_progressbar_clone = cache_progressbar.clone();
-        async move {
-            cache_progressbar_clone.inc(1);
-            return fut
-        }
-    })
-    .buffer_unordered(30).collect::<Vec<_>>().await;
+    let _results = futures::stream::iter(futures)
+        .then(|fut| {
+            let cache_progressbar_clone = cache_progressbar.clone();
+            async move {
+                cache_progressbar_clone.inc(1);
+                return fut;
+            }
+        })
+        .buffer_unordered(30)
+        .collect::<Vec<_>>()
+        .await;
 
     cache_progressbar.finish();
 
@@ -265,7 +285,7 @@ async fn resolve_symbol_main(
     rva: u32,
     symbol_cache_dir: &Path,
     open_pdb_cache: Arc<RwLock<HashMap<PathBuf, RangeMap<u32, LineSymbol>>>>,
-    mpb: Arc<MultiProgress>
+    mpb: Arc<MultiProgress>,
 ) -> Result<String> {
     let binary_cache_key = binary_path.to_owned();
 
@@ -299,7 +319,10 @@ async fn resolve_symbol_main(
 
             let cache_progressbar = mpb.add(ProgressBar::new(context.function_count() as u64));
             cache_progressbar.set_style(get_pb_style());
-            cache_progressbar.set_message(format!("Building {} symbol cache...", pdb_paths.pdb_filename));
+            cache_progressbar.set_message(format!(
+                "Building {} symbol cache...",
+                pdb_paths.pdb_filename
+            ));
 
             let mut line_table = RangeMap::new();
             //println!("Building line cache for {}", pdb_path_str);
@@ -312,11 +335,16 @@ async fn resolve_symbol_main(
 
                 if let Some(name) = f.name {
                     let mangled_name = Name::new(name, NameMangling::Unknown, Language::Unknown);
-                    let demanged_named = mangled_name.try_demangle(DemangleOptions::name_only()).to_string();
+                    let demanged_named = mangled_name
+                        .try_demangle(DemangleOptions::name_only())
+                        .to_string();
 
                     if let Some(mut partial_line) = prev_partial_line.as_mut() {
                         partial_line.end_rva = f.start_rva;
-                        line_table.insert(partial_line.start_rva..partial_line.end_rva, partial_line.clone());
+                        line_table.insert(
+                            partial_line.start_rva..partial_line.end_rva,
+                            partial_line.clone(),
+                        );
                         //println!("{} {:08X} {:08X} {}", pdb_paths.pdb_filename, partial_line.start_rva, partial_line.end_rva, partial_line.demangled_name);
                         prev_partial_line = None;
                     }
@@ -328,17 +356,15 @@ async fn resolve_symbol_main(
                             start_rva: f.start_rva,
                             end_rva: end_rva,
                         };
-    
+
                         //println!("{} {:08X} {:08X} {}", pdb_paths.pdb_filename,f.start_rva, end_rva, line.demangled_name);
                         line_table.insert(range, line);
                     } else {
-                        prev_partial_line = Some(
-                            LineSymbol {
-                                demangled_name: demanged_named,
-                                start_rva: f.start_rva,
-                                end_rva: 0,
-                            }
-                        );
+                        prev_partial_line = Some(LineSymbol {
+                            demangled_name: demanged_named,
+                            start_rva: f.start_rva,
+                            end_rva: 0,
+                        });
                     }
                 } else {
                     prev_partial_line = None
@@ -361,45 +387,66 @@ async fn resolve_symbol_main(
         .context("Failed to load cached PDB")?;
     let line = lines.get(&rva).context("No symbol found for line")?;
 
-    let module_name = binary_path.file_stem().expect("Failed to get filename for modulename").to_str().unwrap();
+    let module_name = binary_path
+        .file_stem()
+        .expect("Failed to get filename for modulename")
+        .to_str()
+        .unwrap();
 
     // resolve rva to offset from fn start
-    let new_line = format!("{}!{} +0x{:04X}", module_name, line.demangled_name, rva - line.start_rva);
+    let new_line = format!(
+        "{}!{} +0x{:04X}",
+        module_name,
+        line.demangled_name,
+        rva - line.start_rva
+    );
 
     return Ok(new_line);
 }
 
 fn get_pb_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{elapsed}] {bar:40.green/red} {pos:>7}/{len:7} {eta} {msg}")
+        .template("[{elapsed}] {bar:40.green/red} {pos:>7}/{len:7} {eta} {msg}").expect("Failed to format progress template")
         .progress_chars("##-")
 }
 
 fn get_pb_dl_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{elapsed}] {bar:40.green/red} {bytes}/{total_bytes} ({bytes_per_sec}) {eta} {msg}")
+        .template(
+            "[{elapsed}] {bar:40.green/red} {bytes}/{total_bytes} ({bytes_per_sec}) {eta} {msg}",
+        ).expect("Failed to format progress template")
         .progress_chars("##-")
 }
 
 #[tokio::main]
 async fn main() {
-    let matches = clap::App::new("PDBReSym")
+    let matches = clap::Command::new("PDBReSym")
     .author("Stephen Eckels")
-    .arg(
-        clap::Arg::new("logfile").help("Path to strace log file").required(false)
-    )
-    .arg(
-        clap::Arg::new("outfile").help("Path to write symbolicated output file").required(false)
-    )
     .arg(
         clap::Arg::new("cachefolder").help("Path to directory to cache PDBs").long("cachefolder").required(false).default_value("C:\\symbols")
     )
-    .arg(
-        clap::Arg::new("sysdir").help("Path to folder containing windows system binaries").long("sysdir").required(false).default_value("C:\\Windows\\System32\\")
+    .subcommand(clap::Command::new("symbolicate")
+        .about("Symbolicate the given logfile and write out the symbolicated version. May download PDBs as necessary")
+        .arg(
+            clap::Arg::new("logfile").help("Path to strace log file").required(true)
+        )
+        .arg(
+            clap::Arg::new("outfile").help("Path to write symbolicated output file").required(true)
+        )
     )
     .subcommand(
         clap::Command::new("cachesyms")
-        .about("If provided, iterates the windows system32 directory and caches all PDBs concurrently before symbolication")
+        .about("Iterates the specified sysdir and downloads all PDBs concurrently")
+        .arg(
+            clap::Arg::new("sysdir").help("Path to folder containing windows system binaries").long("sysdir").required(false).default_value("C:\\Windows\\System32\\")
+        )
+    )
+    .subcommand(
+        clap::Command::new("getpdb")
+        .about("Downloads the PDB for the given PE file")
+        .arg(
+            clap::Arg::new("filepath").help("Path to PE file to get the PDB for").long("filepath").required(false)
+        )
     )
     .subcommand(clap::Command::new("downloadpe")
         .about("Rather than downloading a PDB, download a PE from the symbol server")
@@ -419,113 +466,141 @@ async fn main() {
 
     let subcommand = matches.subcommand();
     if let Some(("downloadpe", args)) = subcommand {
-        let filename = args.value_of("filename").unwrap();
-        let timestamp = u64::from_str_radix(args.value_of("timestamp").unwrap(), 16).expect("timestamp is not hex");
-        let filesize = u64::from_str_radix(args.value_of("filesize").unwrap(), 16).expect("filesize is not hex");
+        let filename: String = args.get_one::<String>("filename").unwrap().to_string();
+        let timestamp = u64::from_str_radix(*args.get_one("timestamp").unwrap(), 16)
+            .expect("timestamp is not hex");
+        let filesize = u64::from_str_radix(*args.get_one("filesize").unwrap(), 16)
+            .expect("filesize is not hex");
 
-        let downloaded_file = match fetch_pe(filename, timestamp, filesize, mpb.clone()).await {
+        let downloaded_file = match fetch_pe(&filename, timestamp, filesize, mpb.clone()).await {
             Ok(p) => p,
             Err(e) => {
                 println!("Error downloading {}: {}", filename, e.to_string());
                 return;
             }
         };
-        println!("Downloaded {} to {}", filename, downloaded_file.as_os_str().to_str().unwrap());
-        return
+        println!(
+            "Downloaded {} to {}",
+            filename,
+            downloaded_file.as_os_str().to_str().unwrap()
+        );
+        return;
     }
 
-    let symbol_cache_dir = Path::new(matches.value_of("cachefolder").expect("Failed to read cachefolder argument for symbol cache"));
-    let system_directory = Path::new(matches.value_of("sysdir").expect("Failed to read sysdir argument for symbol cache source binaries"));
+    let symbol_cache_dir = Path::new(
+        matches
+            .get_one::<String>("cachefolder")
+            .expect("Failed to read cachefolder argument for symbol cache"),
+    );
     fs::create_dir_all(&symbol_cache_dir).expect("Failed to create symbol cache directory");
 
     // before anything, download the symbols for everything in the windows directory.
     // this is much faster, as this is able to concurrently download things. The loop below waits per file.
-    if let Some(("cachesyms", _args)) = subcommand {
+    if let Some(("cachesyms", args)) = subcommand {
+        let system_directory = Path::new(
+            args.get_one::<String>("sysdir")
+                .expect("Failed to read sysdir argument for symbol cache source binaries"),
+        );
         let _ = build_symbol_cache(system_directory, symbol_cache_dir, mpb.clone()).await;
     }
 
-    // binary file path -> range: RVA_start..RVA_end = PDB Function Line Info
-    let open_pdbs: HashMap<PathBuf, RangeMap<u32, LineSymbol>> = HashMap::new();
+    if let Some(("getpdb", args)) = subcommand {
+        let file_path = Path::new(
+            args.get_one::<String>("filepath")
+                .expect("Failed to read filepath to PE file"),
+        );
 
-    let open_pdb_arc = Arc::new(RwLock::new(open_pdbs));
+        let (_, pdbpaths) = fetch_pdb(&file_path, symbol_cache_dir, mpb.clone()).await.expect("Failed to download PDB");
+        println!(
+            "Downloaded {} to {}",
+            pdbpaths.url,
+            pdbpaths.pdb_cache_file_path.to_str().expect("Failed to convert path to string"),
+        );
+    }
 
-    let logfile = Path::new(
-        matches
-            .value_of("logfile")
-            .expect("logfile argument not provided"),
-    );
+    if let Some(("symbolicate", args)) = subcommand {
+        // binary file path -> range: RVA_start..RVA_end = PDB Function Line Info
+        let open_pdbs: HashMap<PathBuf, RangeMap<u32, LineSymbol>> = HashMap::new();
 
-    let outfile = Path::new(
-        matches
-            .value_of("outfile")
-            .expect("outfile argument not provided"),
-    );
+        let open_pdb_arc = Arc::new(RwLock::new(open_pdbs));
 
-    if let Some(loglines) = load_txt_file(Path::new(logfile)) {
-        let log_progressbar = mpb.add(ProgressBar::new(loglines.len() as u64));
-        log_progressbar.set_style(get_pb_style());
-        log_progressbar.set_message("Symbolicating");
+        let logfile = Path::new(
+            args.get_one::<String>("logfile")
+                .expect("logfile argument not provided"),
+        );
 
-        let mpb_clone = mpb.clone();
-        tokio::task::spawn_blocking(move || {
-          let _ = mpb_clone.join(); // polls the drawers
-        });
+        let outfile = Path::new(
+            args.get_one::<String>("outfile")
+                .expect("outfile argument not provided"),
+        );
 
-        // 10:49:00.035  INF #1   1136    [C:\Windows\Microsoft.NET\Framework64\v4.0.30319\clr.dll] +0x006df961
-        // (?<prefix>.*?)\[(?<path>.*?)\]\s+\+(?<offset>0x[0-9a-fA-F]+)
-        let regx = Regex::new("(.*?)\\[(.*?)\\]\\s+\\+(0x[0-9a-fA-F]+)(.*)").unwrap();
+        if let Some(loglines) = load_txt_file(Path::new(logfile)) {
+            let log_progressbar = mpb.add(ProgressBar::new(loglines.len() as u64));
+            log_progressbar.set_style(get_pb_style());
+            log_progressbar.set_message("Symbolicating");
 
-        let transformed_lines = stream::iter(loglines)
-            .then(|line| {
-                let open_pdb_clone = open_pdb_arc.clone();
-                let regx_clone = regx.clone();
-                let log_progressbar_clone = log_progressbar.clone();
-                let mpb_clone = mpb.clone();
+            // 10:49:00.035  INF #1   1136    [C:\Windows\Microsoft.NET\Framework64\v4.0.30319\clr.dll] +0x006df961
+            // (?<prefix>.*?)\[(?<path>.*?)\]\s+\+(?<offset>0x[0-9a-fA-F]+)
+            let regx = Regex::new("(.*?)\\[(.*?)\\]\\s+\\+(0x[0-9a-fA-F]+)(.*)").unwrap();
 
-                // this async block is run 1 by 1 per each element
-                async move {
-                    log_progressbar_clone.inc(1);
-                    if let Some(captures) = regx_clone.captures(&line) {
-                        let line_prefix = captures.get(1).map_or("", |m| m.as_str());
-                        let path = captures
-                            .get(2)
-                            .map_or("", |m| m.as_str())
-                            .replace("\\SystemRoot\\", "C:\\Windows\\");
-                        let offset_str = captures.get(3).map_or("", |m| m.as_str());
-                        let line_suffix = captures.get(4).map_or("", |m| m.as_str());
+            let transformed_lines = stream::iter(loglines)
+                .then(|line| {
+                    let open_pdb_clone = open_pdb_arc.clone();
+                    let regx_clone = regx.clone();
+                    let log_progressbar_clone = log_progressbar.clone();
+                    let mpb_clone = mpb.clone();
 
-                        let offset = u64::from_str_radix(offset_str.trim_start_matches("0x"), 16)
-                            .unwrap() as u32;
+                    // this async block is run 1 by 1 per each element
+                    async move {
+                        log_progressbar_clone.inc(1);
+                        if let Some(captures) = regx_clone.captures(&line) {
+                            let line_prefix = captures.get(1).map_or("", |m| m.as_str());
+                            let path = captures
+                                .get(2)
+                                .map_or("", |m| m.as_str())
+                                .replace("\\SystemRoot\\", "C:\\Windows\\");
+                            let offset_str = captures.get(3).map_or("", |m| m.as_str());
+                            let line_suffix = captures.get(4).map_or("", |m| m.as_str());
 
-                        if let Ok(symbol) = resolve_symbol_main(
-                            Path::new(&path),
-                            offset,
-                            symbol_cache_dir,
-                            open_pdb_clone.clone(),
-                            mpb_clone
-                        )
-                        .await
-                        {
-                            return format!("{}{}{}", line_prefix, symbol, line_suffix);
+                            let offset =
+                                u64::from_str_radix(offset_str.trim_start_matches("0x"), 16)
+                                    .unwrap() as u32;
+
+                            if let Ok(symbol) = resolve_symbol_main(
+                                Path::new(&path),
+                                offset,
+                                symbol_cache_dir,
+                                open_pdb_clone.clone(),
+                                mpb_clone,
+                            )
+                            .await
+                            {
+                                return format!("{}{}{}", line_prefix, symbol, line_suffix);
+                            }
                         }
+                        line.to_string()
                     }
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .await;
+                })
+                .collect::<Vec<_>>()
+                .await;
 
-        let out_progressbar = mpb.add(ProgressBar::new(transformed_lines.len() as u64));
-        out_progressbar.set_style(get_pb_style());
-        out_progressbar.set_message("Writing Output");
+            let out_progressbar = mpb.add(ProgressBar::new(transformed_lines.len() as u64));
+            out_progressbar.set_style(get_pb_style());
+            out_progressbar.set_message("Writing Output");
 
-        let mut h_outfile = tokio::fs::File::create(outfile).await.expect("Failed to create output file");
-        for line in transformed_lines {
-            out_progressbar.inc(1);
-            let _ = h_outfile.write((line + "\n").as_bytes()).await.expect("Failed to write to output file");
+            let mut h_outfile = tokio::fs::File::create(outfile)
+                .await
+                .expect("Failed to create output file");
+            for line in transformed_lines {
+                out_progressbar.inc(1);
+                let _ = h_outfile
+                    .write((line + "\n").as_bytes())
+                    .await
+                    .expect("Failed to write to output file");
+            }
+
+            log_progressbar.finish();
+            out_progressbar.finish();
         }
-
-        log_progressbar.finish();
-        out_progressbar.finish();
     }
 }

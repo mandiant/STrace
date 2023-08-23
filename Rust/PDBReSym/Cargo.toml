@@ -18,6 +18,6 @@ ouroboros = "0.17"
 symbolic-demangle = "12"
 symbolic-common = "12"
 futures = "0.3.21"
-clap = "3"
+clap = "4"
 rangemap = { version = "1", features = ["serde1"] }
-indicatif = "0.16"
+indicatif = "0.17"
