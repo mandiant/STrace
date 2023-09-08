@@ -76,6 +76,7 @@ public:
 	tSetTlsData pSetTlsData;
 	tGetTlsData pGetTlsData;
 	tLogPrintApi pLogPrint;
+	tEtwTraceApi pEtwTrace;
 	tSetCallbackApi pSetCallback;
 	tUnSetCallbackApi pUnsetCallback;
 	tSetEtwCallbackApi pEtwSetCallback;
