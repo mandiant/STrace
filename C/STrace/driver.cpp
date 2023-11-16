@@ -5,72 +5,9 @@
 #include "Etw.h"
 #include "EtwLogger.h"
 #include "DynamicTrace.h"
+#include "PluginData.h"
 #include "Logger.h"
-#include "ManualMap.h"
 #include "Interface.h"
-
-class PluginData {
-public:
-    PluginData() {
-        zero();
-    }
-
-    bool isLoaded() {
-        return InterlockedAdd64((volatile LONG64*)&pImageBase, 0) != 0;
-    }
-    
-    // Must free old plugin data before setting new one
-    bool setPluginData(uint64_t base, tStpIsTarget istarget, tStpCallbackEntryPlugin entry, tStpCallbackReturnPlugin ret, tStpInitialize init, tStpDeInitialize deinit, tDtEtwpEventCallback etw) {
-        pCallbackEntry = entry;
-        pCallbackReturn = ret;
-        pInitialize = init;
-        pDeInitialize = deinit;
-        pIsTarget = istarget;
-        pDtEtwpEventCallback = etw;
-        
-        // set pImageBase last since it's used atomically for isLoaded
-        auto expected = pImageBase;
-        auto atomicGot = (uint64_t)_InterlockedCompareExchange64((volatile LONG64*)&pImageBase, base, expected);
-
-        // if the swap worked we get what we expected
-        return atomicGot == expected;
-    }
-
-    // Must free old plugin data before setting new one
-    bool freePluginData() {
-        // set pImageBase last since it's used atomically for isLoaded
-        auto expected = pImageBase;
-        auto atomicGot = (uint64_t)_InterlockedCompareExchange64((volatile LONG64*)&pImageBase, 0, expected);
-
-        if (atomicGot == expected && expected != 0) {
-            ExFreePoolWithTag((char*)expected, DRIVER_POOL_TAG);
-            zero();
-            return true;
-        }
-        return false;
-    }
-    
-    tStpIsTarget pIsTarget;
-    tStpCallbackEntryPlugin pCallbackEntry;
-    tStpCallbackReturnPlugin pCallbackReturn;
-    tDtEtwpEventCallback pDtEtwpEventCallback;
-
-    // zeroed immediately after use, these are optional
-    tStpInitialize pInitialize;
-    tStpDeInitialize pDeInitialize;
-private:
-    void zero() {
-        pImageBase = 0;
-        pInitialize = 0;
-        pCallbackEntry = 0;
-        pCallbackReturn = 0;
-        pDeInitialize = 0;
-        pIsTarget = 0;
-        pDtEtwpEventCallback = 0;
-    }
-
-    volatile uint64_t pImageBase;
-};
 
 // forward declare
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
@@ -134,8 +71,6 @@ NTSTATUS NotImplementedRoutine()
 {
 	return STATUS_NOT_IMPLEMENTED;
 }
-
-ManualMapper g_DllMapper;
 
 /**
 pService: Pointer to system service from SSDT
@@ -368,42 +303,25 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS HandleDllLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
+NTSTATUS HandlePluginLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
     char* input = (char*)Irp->AssociatedIrp.SystemBuffer;
     uint64_t inputLen = IrpStack->Parameters.DeviceIoControl.InputBufferLength;
 
     // only 1 plugin is allowed to load at a time
     NTSTATUS status = STATUS_SUCCESS;
     if (!pluginData.isLoaded()) {
-        // Executes DLLMain if it exists
-        uint64_t dllBase = g_DllMapper.mapImage(input, inputLen);
-        if (!dllBase) {
+        
+        status = pluginData.load();
+        if(!NT_SUCCESS(status))
+        {
             LOG_ERROR("[!] Plugin Loading Failed\r\n");
             status = STATUS_UNSUCCESSFUL;
             goto exit;
         }
-
-        LOG_INFO("[+] Dll Mapped at %I64X\r\n", dllBase);
-
-        auto entry = (tStpCallbackEntryPlugin)g_DllMapper.getExport(dllBase, "StpCallbackEntry");
-        auto ret = (tStpCallbackReturnPlugin)g_DllMapper.getExport(dllBase, "StpCallbackReturn");
-        auto init = (tStpInitialize)g_DllMapper.getExport(dllBase, "StpInitialize");
-        auto deinit = (tStpDeInitialize)g_DllMapper.getExport(dllBase, "StpDeInitialize");
-        auto istarget = (tStpIsTarget)g_DllMapper.getExport(dllBase, "StpIsTarget");
-        auto etw = (tDtEtwpEventCallback)g_DllMapper.getExport(dllBase, "DtEtwpEventCallback");
-
-        uint32_t tries = 0;
-        while (!pluginData.setPluginData(dllBase, istarget, entry, ret, init, deinit, etw)) {
-            if (tries++ >= 10) {
-                LOG_ERROR("[!] Atomic plugin load failed\r\n");
-                status = STATUS_UNSUCCESSFUL;
-                goto exit;
-            }
-        }
         
         if (pluginData.pInitialize) {
             // The plugin must immediately copy this structure. It must be a local to avoid C++ static initializers, which are created if its a global
-            PluginApis pluginApis(&MmGetSystemRoutineAddress, &LogPrint, &EtwTrace, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory, &SetTLSData, &GetTLSData);
+            PluginApis pluginApis(&LogPrint, &EtwTrace, &SetCallbackApi, &UnSetCallbackApi, &SetEtwCallback, &UnSetEtwCallback, &TraceAccessMemory, &SetTLSData, &GetTLSData);
             pluginData.pInitialize(pluginApis);
 
             // prevent double initialize regardless of rest
@@ -424,21 +342,14 @@ exit:
     return status;
 }
 
-NTSTATUS HandleDllUnLoad() {
+NTSTATUS HandlePluginUnLoad() {
+    NTSTATUS status;
     if (pluginData.isLoaded()) {
-        if (pluginData.pDeInitialize) {
-            pluginData.pDeInitialize();
-
-            // prevent double deinitialize regardless of rest
-            pluginData.pDeInitialize = 0;
-        }
-
-        uint32_t tries = 0;
-        while (!pluginData.freePluginData()) {
-            if (tries++ >= 10) {
-                LOG_ERROR("[!] Atomic plugin unload failed\r\n");
-                return STATUS_UNSUCCESSFUL;
-            }
+        status = pluginData.unload();
+        if (!NT_SUCCESS(status))
+        {
+            LOG_ERROR("[!] Plugin unload failed: 0x%08X\r\n", status);
+            return status;
         }
 
         if (LogInitialized) {
@@ -447,7 +358,7 @@ NTSTATUS HandleDllUnLoad() {
         }
     } else {
         LOG_ERROR("[!] No plugin is loaded, unload failed\r\n");
-        return STATUS_UNSUCCESSFUL;
+        return STATUS_ALREADY_COMPLETE;
     }
 
     return STATUS_SUCCESS;
@@ -499,12 +410,12 @@ Return Value:
     switch (Ioctl)
     {
     case IOCTL_LOADDLL:
-        LOG_INFO("Starting DLL load\r\n");
-        Status = HandleDllLoad(Irp, IrpStack);
+        LOG_INFO("Starting Plugin load\r\n");
+        Status = HandlePluginLoad(Irp, IrpStack);
         break;
     case IOCTL_UNLOADDLL:
-        LOG_INFO("Starting DLL unload\r\n");
-        Status = HandleDllUnLoad();
+        LOG_INFO("Starting Plugin unload\r\n");
+        Status = HandlePluginUnLoad();
         break;
     default:
         LOG_WARN("Unrecognized ioctl 0x%x\r\n", Ioctl);
