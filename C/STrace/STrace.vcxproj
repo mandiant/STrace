@@ -132,7 +132,6 @@
     <ClCompile Include="Etw.cpp" />
     <ClCompile Include="EtwLogger.cpp" />
     <ClCompile Include="Logger.cpp" />
-    <ClCompile Include="ManualMap.cpp" />
     <ClCompile Include="NtStructs.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -142,10 +141,10 @@
     <ClInclude Include="EtwLogger.h" />
     <ClInclude Include="Interface.h" />
     <ClInclude Include="Logger.h" />
-    <ClInclude Include="ManualMap.h" />
     <ClInclude Include="MyStdint.h" />
     <ClInclude Include="NtBuild.h" />
     <ClInclude Include="NtStructs.h" />
+    <ClInclude Include="PluginData.h" />
     <ClInclude Include="vector.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
