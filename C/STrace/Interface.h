@@ -43,13 +43,12 @@ typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
 typedef NTSTATUS(*tUnSetEtwCallbackApi)();
-typedef PVOID(NTAPI*tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
 class PluginApis {
 public:
 	PluginApis() = default;
-	PluginApis(tMmGetSystemRoutineAddress getAddress, tLogPrintApi print, tEtwTraceApi etwTrace, tSetCallbackApi setCallback,
+	PluginApis(tLogPrintApi print, tEtwTraceApi etwTrace, tSetCallbackApi setCallback,
 		tUnSetCallbackApi unsetCallback, tSetEtwCallbackApi etwSetCallback, tUnSetEtwCallbackApi etwUnSetCallback,
 		tTraceAccessMemory accessMemory, tSetTlsData setTlsData, tGetTlsData getTlsData) {
 
@@ -61,7 +60,6 @@ public:
 		pUnsetCallback = unsetCallback;
 		pEtwSetCallback = etwSetCallback;
 		pEtwUnSetCallback = etwUnSetCallback;
-		pGetSystemRoutineAddress = getAddress;
 		pTraceAccessMemory = accessMemory;
 	}
 
@@ -73,7 +71,6 @@ public:
 	tUnSetCallbackApi pUnsetCallback;
 	tSetEtwCallbackApi pEtwSetCallback;
 	tUnSetEtwCallbackApi pEtwUnSetCallback;
-	tMmGetSystemRoutineAddress pGetSystemRoutineAddress;
 	tTraceAccessMemory pTraceAccessMemory;
 };
 
