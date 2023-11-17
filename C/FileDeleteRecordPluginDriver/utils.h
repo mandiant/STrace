@@ -3,31 +3,46 @@
 // Include order matters here sadly. The C++ headers below may include C headers that re-define kernel apis. We must define our things first.
 #include <ntifs.h>
 #include "Interface.h"
-//#include "string.h"
+#include "string.h"
 
-#define _ITERATOR_DEBUG_LEVEL 0
-//#include <utility>
-//#include <array>
-//#include <span>
-//#include <type_traits>
+namespace kstl {
+    template<typename T> struct remove_reference { typedef T type; };
+    template<typename T> struct remove_reference<T&> { typedef T type; };
+    template<typename T> struct remove_reference<T&&> { typedef T type; };
+
+    template <class _Ty>
+    using remove_reference_t = typename remove_reference<_Ty>::type;
+
+    template <class _Ty>
+    constexpr _Ty&& forward(remove_reference_t<_Ty>& _Arg) noexcept {
+        return static_cast<_Ty&&>(_Arg);
+    };
+
+    // <https://stackoverflow.com/a/7518365>
+    template<typename T>
+    typename remove_reference<T>::type&& move(T&& arg)
+    {
+        return static_cast<typename remove_reference<T>::type&&>(arg);
+    }
+}
 
 #define ObjectNameInformation (OBJECT_INFORMATION_CLASS)1
 
 const unsigned long POOL_TAG = '0RTS';
 const wchar_t* backup_directory = L"\\??\\C:\\deleted";
 
-//template<typename T, typename... Args>
-//int string_printf(String& str, T printer, Args&&... args) {
-//    char tmp[512] = { 0 };
-//
-//    int size = printer(tmp, sizeof(tmp), std::forward<Args>(args)...);
-//    if (size < 0) {
-//        return -1;
-//    }
-//
-//    str += (char*)tmp;
-//    return size;
-//}
+template<typename T, typename... Args>
+int string_printf(String& str, T printer, Args&&... args) {
+    char tmp[512] = { 0 };
+
+    int size = printer(tmp, sizeof(tmp), kstl::forward<Args>(args)...);
+    if (size < 0) {
+        return -1;
+    }
+
+    str += (char*)tmp;
+    return size;
+}
 
 using hash_t = uint64_t;
 
@@ -49,28 +64,10 @@ consteval uint64_t get_type_id() {
     return fnv1a(__FUNCSIG__);
 }
 
-#ifdef KCPP
-
-
-// given a typedef, match the arg list and convert each arg to a typeid. Store results in an array.
-template<typename T>
-struct arg_types {};
-
-template<typename R, typename... A>
-struct arg_types<R(*)(A...)> {
-    static constexpr std::array<uint64_t, sizeof...(A)> value = { get_type_id<A>()... };
-};
-
-// msvc doesn't implement a constructor for std::span from iterators. This does that...
-template<typename It>
-constexpr auto make_span(It begin, It end) {
-    return std::span<std::remove_reference_t<std::iter_reference_t<It>>>(&(*begin), std::distance(begin, end));
-}
-
 template<typename Func>
 class FinalAction {
 public:
-    FinalAction(Func f) :FinalActionFunc(std::move(f)) {}
+    FinalAction(Func f) :FinalActionFunc(kstl::move(f)) {}
     ~FinalAction()
     {
         FinalActionFunc();
@@ -260,31 +257,7 @@ NTSTATUS DuplicateUnicodeString(PCUNICODE_STRING SourceString, PUNICODE_STRING D
 
         memcpy(DestinationString->Buffer, SourceString->Buffer, SourceString->Length);
         DestinationString->Length = SourceString->Length;
-        DestinationString->MaximumLength = DestMaxLength;
+        DestinationString->MaximumLength = (USHORT)DestMaxLength;
     }
     return STATUS_SUCCESS;
 }
-
-OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
-    ULONG dwSize = 0;
-    OBJECT_NAME_INFORMATION* pObjectName = nullptr;
-    NTSTATUS status = ZwQueryObject(hFile, ObjectNameInformation, pObjectName, 0, &dwSize);
-    if (dwSize)
-    {
-        pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, POOL_TAG);
-        if (pObjectName) {
-            status = ZwQueryObject(hFile, ObjectNameInformation, pObjectName, dwSize, &dwSize);
-        }
-    }
-
-    if (status == STATUS_SUCCESS && pObjectName) {
-        return pObjectName;
-    }
-
-    if (pObjectName) {
-        ExFreePoolWithTag(pObjectName, POOL_TAG);
-        pObjectName = nullptr;
-    }
-    return nullptr;
-}
-#endif 
