@@ -48,19 +48,20 @@ public:
 
         // don't use isLoaded() here because of locking
         if (loaded) {
-            return STATUS_ALREADY_INITIALIZED;
+            status = STATUS_ALREADY_INITIALIZED;
+            goto exit;
         }
 
         status = ZwLoadDriver(&pluginServiceName);
         if (!NT_SUCCESS(status)) {
-            LOG_ERROR("ZwLoadDriver Failed with: 0x%08X", status);
+            LOG_ERROR("ZwLoadDriver Failed with: 0x%08X\r\n", status);
             goto exit;
         }
         InterlockedIncrement(&loaded);
 
         status = setPluginBaseAddress();
         if (!NT_SUCCESS(status)){
-            LOG_ERROR("setPluginBaseAddress failed to find plugin");
+            LOG_ERROR("setPluginBaseAddress failed to find plugin\n");
             goto exit;
         }
 
@@ -72,7 +73,7 @@ public:
         pDtEtwpEventCallback = (tDtEtwpEventCallback)getExport("DtEtwpEventCallback");
 
         if((pCallbackEntry && pCallbackReturn && pIsTarget) == 0){
-            LOG_ERROR("Failed to acquire plugin exports");
+            LOG_ERROR("Failed to acquire plugin exports\r\n");
             status = STATUS_PROCEDURE_NOT_FOUND;
             goto exit;
         }
@@ -95,13 +96,14 @@ public:
         if(!locked) lock();
         if (!loaded){
             status =  STATUS_ALREADY_COMPLETE;
+            goto exit;
         }
 
         status = ZwUnloadDriver(&pluginServiceName);
         if (!NT_SUCCESS(status)){
             // If driver doesn't unload, then it is still loaded and we should
             // return the plugin to a loaded state and return an error
-            LOG_INFO("[!] Failed to unload plugin driver");
+            LOG_INFO("[!] Failed to unload plugin driver\r\n");
             goto exit;
         }
         InterlockedDecrement(&loaded);
@@ -109,7 +111,7 @@ public:
 
         status = STATUS_SUCCESS;
     exit:
-        if(locked)unlock();
+        if(!locked)unlock();
         return status;
 
     }
