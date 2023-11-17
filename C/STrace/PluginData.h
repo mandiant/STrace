@@ -8,7 +8,9 @@
 #define RVA2VA(type, base, rva) (type)((ULONG_PTR) base + rva)
 
 #define _countof(array) (sizeof(array) / sizeof(array[0]))
+
 UNICODE_STRING pluginServiceName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\StracePlugin");
+
 const char* pluginFullPathNames[] = {
     "\\systemroot\\system32\\drivers\\plugin.sys",
     "\\??\\C:\\Windows\\system32\\drivers\\plugin.sys"
@@ -24,7 +26,7 @@ struct ExportDirectoryPtrs {
 class PluginData {
 public:
     PluginData() {
-        ExInitializeFastMutex(&loaderLock);
+        loaderLock = 0;
         zero();
     }
 
@@ -35,9 +37,8 @@ public:
     NTSTATUS load() {
 
         NTSTATUS status;
-
-        // LOCK
-        ExAcquireFastMutex(&loaderLock);
+        
+        lock();
         if (!isLoaded()) {
             return STATUS_ALREADY_INITIALIZED;
         }
@@ -55,12 +56,12 @@ public:
             goto exit;
         }
 
-        pCallbackEntry = (tStpCallbackEntryPlugin)pluginData.getExport("StpCallbackEntry");
-        pCallbackReturn = (tStpCallbackReturnPlugin)pluginData.getExport("StpCallbackReturn");
-        pInitialize = (tStpInitialize)pluginData.getExport("StpInitialize");
-        pDeInitialize = (tStpDeInitialize)pluginData.getExport("StpDeInitialize");
-        pIsTarget = (tStpIsTarget)pluginData.getExport("StpIsTarget");
-        pDtEtwpEventCallback = (tDtEtwpEventCallback)pluginData.getExport("DtEtwpEventCallback");
+        pCallbackEntry = (tStpCallbackEntryPlugin)getExport("StpCallbackEntry");
+        pCallbackReturn = (tStpCallbackReturnPlugin)getExport("StpCallbackReturn");
+        pInitialize = (tStpInitialize)getExport("StpInitialize");
+        pDeInitialize = (tStpDeInitialize)getExport("StpDeInitialize");
+        pIsTarget = (tStpIsTarget)getExport("StpIsTarget");
+        pDtEtwpEventCallback = (tDtEtwpEventCallback)getExport("DtEtwpEventCallback");
 
         if((pCallbackEntry && pCallbackReturn && pIsTarget && pDtEtwpEventCallback) == 0){
             LOG_ERROR("Failed to acquire plugin exports");
@@ -68,11 +69,11 @@ public:
             goto exit;
         }
 
-        InterlockedIncrement(& loaded);
+        InterlockedIncrement(&loaded);
         LOG_INFO("[+] Plugin Loaded at: %I64X\r\n", pImageBase);
 
     exit:
-        ExReleaseFastMutex(&loaderLock);
+        unlock();
         return status;
     }
 
@@ -80,8 +81,8 @@ public:
     NTSTATUS unload() {
         NTSTATUS status;
         // set pImageBase last since it's used atomically for isLoaded
-        ExAcquireFastMutex(&loaderLock);
-        if (!pluginData.isLoaded())
+        lock();
+        if (!isLoaded())
         {
             status =  STATUS_ALREADY_COMPLETE;
         }
@@ -100,23 +101,9 @@ public:
 
         status = STATUS_SUCCESS;
     exit:
-        ExReleaseFastMutex(&loaderLock);
+        unlock();
         return status;
 
-    }
-
-    uint64_t getExport(const char* procName) {
-        ExportDirectoryPtrs exportPtrs = getExportDir(pImageBase);
-        if (!exportPtrs.exports) {
-            return 0;
-        }
-
-        for (uint32_t i = 0; i < exportPtrs.exports->NumberOfNames; i++) {
-            char* exportName = RVA2VA(char*, pImageBase, exportPtrs.addressOfNames[i]);
-            if (_stricmp(exportName, procName) == 0)
-                return RVA2VA(uint64_t, pImageBase, exportPtrs.addressOfFunctions[i]);
-        }
-        return 0;
     }
 
     tStpIsTarget pIsTarget;
@@ -129,6 +116,14 @@ public:
     tStpDeInitialize pDeInitialize;
 
 private:
+
+    void lock() {
+        while (_interlockedbittestandset(&loaderLock, 0)) {};
+    }
+
+    void unlock() {
+        _interlockedbittestandreset(&loaderLock, 0);
+    }
 
     ExportDirectoryPtrs getExportDir(uint64_t hModule)
     {
@@ -153,6 +148,20 @@ private:
         exportPtrs.addressOfNameOrdinals = RVA2VA(uint16_t*, hModule, pExports->AddressOfNameOrdinals);
         exportPtrs.exports = pExports;
         return exportPtrs;
+    }
+
+    uint64_t getExport(const char* procName) {
+        ExportDirectoryPtrs exportPtrs = getExportDir(pImageBase);
+        if (!exportPtrs.exports) {
+            return 0;
+        }
+
+        for (uint32_t i = 0; i < exportPtrs.exports->NumberOfNames; i++) {
+            char* exportName = RVA2VA(char*, pImageBase, exportPtrs.addressOfNames[i]);
+            if (_stricmp(exportName, procName) == 0)
+                return RVA2VA(uint64_t, pImageBase, exportPtrs.addressOfFunctions[i]);
+        }
+        return 0;
     }
 
     NTSTATUS setPluginBaseAddress()
@@ -209,6 +218,6 @@ private:
     }
 
     uint64_t pImageBase;
-    FAST_MUTEX loaderLock;
+    volatile LONG loaderLock;
     volatile LONG loaded;
 };
