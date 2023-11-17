@@ -13,8 +13,6 @@
 
 #define ObjectNameInformation (OBJECT_INFORMATION_CLASS)1
 
-
-
 const unsigned long POOL_TAG = '0RTS';
 const wchar_t* backup_directory = L"\\??\\C:\\deleted";
 
@@ -44,13 +42,15 @@ consteval uint64_t fnv1a(const char* s)
     return fnv1a_imp(14695981039346656037ull, s);
 }
 
-#ifdef KCPP
 // Abuse template instantion rules to generate a unique name for a given type. Each template is a unique function in C++.
 // Then, convert that string to a numeric hash. Stable for the lifetime of the application, may change between compilations.
 template<typename T>
 consteval uint64_t get_type_id() {
     return fnv1a(__FUNCSIG__);
 }
+
+#ifdef KCPP
+
 
 // given a typedef, match the arg list and convert each arg to a typeid. Store results in an array.
 template<typename T>
