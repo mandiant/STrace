@@ -9,11 +9,12 @@
 
 #define _countof(array) (sizeof(array) / sizeof(array[0]))
 
+// sc create StracePlugin type = kernel start = demand binPath = System32\drivers\StracePlugin.sys
 UNICODE_STRING pluginServiceName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\StracePlugin");
 
 const char* pluginFullPathNames[] = {
-    "\\systemroot\\system32\\drivers\\plugin.sys",
-    "\\??\\C:\\Windows\\system32\\drivers\\plugin.sys"
+    "\\systemroot\\system32\\drivers\\StracePlugin.sys",
+    "\\??\\C:\\Windows\\system32\\drivers\\StracePlugin.sys"
 };
 
 struct ExportDirectoryPtrs {
@@ -30,8 +31,13 @@ public:
         zero();
     }
 
-    bool isLoaded() {
-        return InterlockedAdd(&loaded, 0) != 0;
+    bool isLoaded()
+    {
+        bool _loaded;
+        lock();
+        _loaded = loaded;
+        unlock();
+        return _loaded;
     }
 
     NTSTATUS load() {
@@ -39,7 +45,9 @@ public:
         NTSTATUS status;
         
         lock();
-        if (!isLoaded()) {
+
+        // don't use isLoaded() here because of locking
+        if (loaded) {
             return STATUS_ALREADY_INITIALIZED;
         }
 
@@ -48,10 +56,10 @@ public:
             LOG_ERROR("ZwLoadDriver Failed with: 0x%08X", status);
             goto exit;
         }
+        InterlockedIncrement(&loaded);
 
         status = setPluginBaseAddress();
-        if (!NT_SUCCESS(status))
-        {
+        if (!NT_SUCCESS(status)){
             LOG_ERROR("setPluginBaseAddress failed to find plugin");
             goto exit;
         }
@@ -63,45 +71,45 @@ public:
         pIsTarget = (tStpIsTarget)getExport("StpIsTarget");
         pDtEtwpEventCallback = (tDtEtwpEventCallback)getExport("DtEtwpEventCallback");
 
-        if((pCallbackEntry && pCallbackReturn && pIsTarget && pDtEtwpEventCallback) == 0){
+        if((pCallbackEntry && pCallbackReturn && pIsTarget) == 0){
             LOG_ERROR("Failed to acquire plugin exports");
             status = STATUS_PROCEDURE_NOT_FOUND;
             goto exit;
         }
 
-        InterlockedIncrement(&loaded);
         LOG_INFO("[+] Plugin Loaded at: %I64X\r\n", pImageBase);
 
     exit:
+        if (!NT_SUCCESS(status)){
+            unload(TRUE);
+        }
         unlock();
         return status;
     }
 
     // Must free old plugin data before setting new one
-    NTSTATUS unload() {
+    // can call from load for cleanup, if so pass true for locked
+    NTSTATUS unload(BOOLEAN locked = FALSE) {
         NTSTATUS status;
         // set pImageBase last since it's used atomically for isLoaded
-        lock();
-        if (!isLoaded())
-        {
+        if(!locked) lock();
+        if (!loaded){
             status =  STATUS_ALREADY_COMPLETE;
         }
-        InterlockedDecrement(&loaded);
 
         status = ZwUnloadDriver(&pluginServiceName);
-        if (!NT_SUCCESS(status))
-        {
+        if (!NT_SUCCESS(status)){
             // If driver doesn't unload, then it is still loaded and we should
             // return the plugin to a loaded state and return an error
             LOG_INFO("[!] Failed to unload plugin driver");
-            InterlockedIncrement(&loaded);
             goto exit;
         }
+        InterlockedDecrement(&loaded);
         zero();
 
         status = STATUS_SUCCESS;
     exit:
-        unlock();
+        if(locked)unlock();
         return status;
 
     }
@@ -109,6 +117,8 @@ public:
     tStpIsTarget pIsTarget;
     tStpCallbackEntryPlugin pCallbackEntry;
     tStpCallbackReturnPlugin pCallbackReturn;
+
+    // Optional
     tDtEtwpEventCallback pDtEtwpEventCallback;
 
     // zeroed immediately after use, these are optional
@@ -187,10 +197,9 @@ private:
             pmi = modules->Modules;
             for (ULONG i = 0; i < modules->NumberOfModules; i++)
             {
-                DBGPRINT("Module: %s", pmi[i].FullPathName);
+                //DBGPRINT("Module: %s", pmi[i].FullPathName);
                 for (int j = 0; j < _countof(pluginFullPathNames); j++)
                 {
-                    // RtlStringCbLength FullPathName - 1 because the ANSI_STRING maxLenght will need an extra byte 
                     if(_stricmp(pmi[i].FullPathName, pluginFullPathNames[j]) == 0)
                     {
                         DBGPRINT("Found Module: %s 0x%I64X", pmi[i].FullPathName, pmi[i].ImageBase);
