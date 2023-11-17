@@ -10,29 +10,11 @@ const unsigned long PLUGIN_POOL_TAG = 'LEDS';
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
 
-#if defined(ENABLE_LOG)
-#if defined(__GNUC__) || defined(__clang__)
-
-// On GCC and Clang __VA_ARGS__ must be used differently.
-#define DBGPRINT(format, ...)  DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[STRACE] " format "\n", ##__VA_ARGS__)
-#define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt,...)  g_Apis.pLogPrint(LogLevelError, __FUNCTION__, fmt, ##__VA_ARGS__)
-#else
-
 #define DBGPRINT(format, ...)  DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[STRACE] " format "\n", __VA_ARGS__)
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_ERROR(fmt,...)  g_Apis.pLogPrint(LogLevelError, __FUNCTION__, fmt,   __VA_ARGS__)
-#endif // __GNUC__ || __clang__
-
-#else
-
-#define DBGPRINT(format, ...)   ((void)format)
-
-#endif // _DEBUG
 
 enum PROBE_IDS : ULONG64 {
     IdSetInformationFile = 0,
@@ -85,8 +67,6 @@ void PrintStackTrace(CallerInfo& callerinfo) {
         }
     }
 }
-
-
 
 OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
     ULONG dwSize = 0;
