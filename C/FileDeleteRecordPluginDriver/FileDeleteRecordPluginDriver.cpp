@@ -3,9 +3,10 @@
 
 #include "interface.h"
 
-#include "utils.h"
+#include "..\Utils\Utils.h"
 
 const unsigned long PLUGIN_POOL_TAG = 'LEDS';
+const wchar_t* backup_directory = L"\\??\\C:\\deleted";
 
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
@@ -68,29 +69,6 @@ void PrintStackTrace(CallerInfo& callerinfo) {
     }
 }
 
-OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
-    ULONG dwSize = 0;
-    OBJECT_NAME_INFORMATION* pObjectName = nullptr;
-    NTSTATUS status = ZwQueryObject(hFile, (OBJECT_INFORMATION_CLASS)1 /*ObjectNameInformation*/, pObjectName, 0, &dwSize);
-    if (dwSize)
-    {
-        pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, PLUGIN_POOL_TAG);
-        if (pObjectName) {
-            status = ZwQueryObject(hFile, (OBJECT_INFORMATION_CLASS)1 /*ObjectNameInformation*/, pObjectName, dwSize, &dwSize);
-        }
-    }
-
-    if (status == STATUS_SUCCESS && pObjectName) {
-        return pObjectName;
-    }
-
-    if (pObjectName) {
-        ExFreePoolWithTag(pObjectName, PLUGIN_POOL_TAG);
-        pObjectName = nullptr;
-    }
-    return nullptr;
-}
-
 extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32 probeId, MachineState & ctx, CallerInfo & callerinfo)
 {
     //LOG_INFO("[ENTRY] %s[0x%x](%d) Id: %d Parameters: [%d]\r\n", callerinfo.processName, callerinfo.processId, callerinfo.isWow64 ? 32 : 64, pService, probeId, ctx.paramCount);
@@ -109,9 +87,9 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
                     
                     if (pFilePath) {
                         LOG_INFO("File %wZ deleted\r\n", pFilePath->Name);
-                        //backupFile((wchar_t*)backup_directory, pFilePath->Name, hFile);
-                        //ExFreePoolWithTag(pFilePath, PLUGIN_POOL_TAG);
-                        //pFilePath = nullptr;
+                        backupFile((wchar_t*)backup_directory, pFilePath->Name, hFile);
+                        ExFreePoolWithTag(pFilePath, PLUGIN_POOL_TAG);
+                        pFilePath = nullptr;
                         LOG_INFO("File Backup Complete\r\n");
                     }
                     else {

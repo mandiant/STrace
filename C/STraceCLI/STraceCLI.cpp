@@ -10,6 +10,7 @@
 #include <memory>
 
 HANDLE g_Driver;
+SC_HANDLE g_Scm;
 
 std::filesystem::path AskForFile() {
     wchar_t szFileName[MAX_PATH] = { 0 };
@@ -99,10 +100,20 @@ int main()
     printf("[+] Opening driver\n");
     g_Driver = CreateFileW(L"\\\\.\\STrace", GENERIC_ALL, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM, 0);
     if (g_Driver == INVALID_HANDLE_VALUE) {
-        printf("[!] Handle open to driver failed\n");
+        printf("[!] Handle open to driver failed: %d\n", GetLastError());
         return 1;
     }
     printf("[+] Driver Opened Successfully\n");
+
+    printf("[+] Opening Service Manager\n");
+    g_Scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (NULL == g_Scm)
+    {
+        printf("[!] OpenServiceManager failed with: %d\n", GetLastError());
+        return 1;
+    }
+    printf("[+] Service Manager Opened Successfully\n");
+
 
     while (true) {
         std::cout << "Input command: load, unload, exit" << std::endl;
