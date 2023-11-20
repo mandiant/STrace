@@ -5,26 +5,12 @@
 #include "Interface.h"
 #include "string.h"
 
-namespace kstl {
-    template<typename T> struct remove_reference { typedef T type; };
-    template<typename T> struct remove_reference<T&> { typedef T type; };
-    template<typename T> struct remove_reference<T&&> { typedef T type; };
-
-    template <class _Ty>
-    using remove_reference_t = typename remove_reference<_Ty>::type;
-
-    template <class _Ty>
-    constexpr _Ty&& forward(remove_reference_t<_Ty>& _Arg) noexcept {
-        return static_cast<_Ty&&>(_Arg);
-    };
-
-    // <https://stackoverflow.com/a/7518365>
-    template<typename T>
-    typename remove_reference<T>::type&& move(T&& arg)
-    {
-        return static_cast<typename remove_reference<T>::type&&>(arg);
-    }
-}
+// $(VC_IncludePath); required for these imports to work in the driver
+#define _ITERATOR_DEBUG_LEVEL 0
+#include <utility>
+#include <array>
+#include <span>
+#include <type_traits>
 
 #define ObjectNameInformation (OBJECT_INFORMATION_CLASS)1
 
@@ -35,7 +21,7 @@ template<typename T, typename... Args>
 int string_printf(String& str, T printer, Args&&... args) {
     char tmp[512] = { 0 };
 
-    int size = printer(tmp, sizeof(tmp), kstl::forward<Args>(args)...);
+    int size = printer(tmp, sizeof(tmp), std::forward<Args>(args)...);
     if (size < 0) {
         return -1;
     }
@@ -67,7 +53,7 @@ consteval uint64_t get_type_id() {
 template<typename Func>
 class FinalAction {
 public:
-    FinalAction(Func f) :FinalActionFunc(kstl::move(f)) {}
+    FinalAction(Func f) :FinalActionFunc(std::move(f)) {}
     ~FinalAction()
     {
         FinalActionFunc();

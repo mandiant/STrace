@@ -7,7 +7,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "STrace", "STrace\STrace.vcx
 	ProjectSection(ProjectDependencies) = postProject
 		{4349310C-30F9-48A9-9AE7-13D181F958B5} = {4349310C-30F9-48A9-9AE7-13D181F958B5}
 		{C09F1082-CDCA-4320-AB91-CC3EAB12560C} = {C09F1082-CDCA-4320-AB91-CC3EAB12560C}
-		{D237889B-F553-478C-857A-A6BF4B883AE9} = {D237889B-F553-478C-857A-A6BF4B883AE9}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "STraceCLI", "STraceCLI\STraceCLI.vcxproj", "{4349310C-30F9-48A9-9AE7-13D181F958B5}"
@@ -21,8 +20,6 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AddNewEtwEventPlugin", "AddNewEtwEventPlugin\AddNewEtwEventPlugin.vcxproj", "{BB90E9EE-4505-4EB2-91DB-5C63BD9A79FE}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FileDeleteRecordPluginDriver", "FileDeleteRecordPluginDriver\FileDeleteRecordPluginDriver.vcxproj", "{CD47158C-73E3-4197-AE90-92DC38D8BC0E}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Utils", "Utils\Utils.vcxproj", "{D237889B-F553-478C-857A-A6BF4B883AE9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -130,18 +127,6 @@ Global
 		{CD47158C-73E3-4197-AE90-92DC38D8BC0E}.Release|x86.ActiveCfg = Release|x64
 		{CD47158C-73E3-4197-AE90-92DC38D8BC0E}.Release|x86.Build.0 = Release|x64
 		{CD47158C-73E3-4197-AE90-92DC38D8BC0E}.Release|x86.Deploy.0 = Release|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|ARM64.ActiveCfg = Debug|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|ARM64.Build.0 = Debug|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|x64.ActiveCfg = Debug|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|x64.Build.0 = Debug|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|x86.ActiveCfg = Debug|Win32
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Debug|x86.Build.0 = Debug|Win32
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|ARM64.ActiveCfg = Release|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|ARM64.Build.0 = Release|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|x64.ActiveCfg = Release|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|x64.Build.0 = Release|x64
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|x86.ActiveCfg = Release|Win32
-		{D237889B-F553-478C-857A-A6BF4B883AE9}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
