@@ -17,6 +17,26 @@
 const unsigned long POOL_TAG = '0RTS';
 const wchar_t* backup_directory = L"\\??\\C:\\deleted";
 
+// You must pass a temporary buffer, so that sprintf may write into that first.
+// It's an argument, because then multiple calls can share the same temp buffer.
+// If it's a local, the compiler inlines these poorly and explodes local stack space quickly.
+typedef int(__cdecl* t_snprintf)(char*, size_t, const char*, ...);
+t_snprintf g_p_snprintf = nullptr;
+
+template<size_t BUFSZ, typename... Args>
+int string_printf(String& str, char(&tmpBuf)[BUFSZ], Args&&... args) {
+    memset(tmpBuf, 0, sizeof(BUFSZ));
+   
+    //assert(g_p_snprintf != nullptr)
+    int size = g_p_snprintf(tmpBuf, BUFSZ, std::forward<Args>(args)...);
+    if (size < 0) {
+        return -1;
+    }
+
+    str += (char*)tmpBuf;
+    return size;
+}
+
 using hash_t = uint64_t;
 
 consteval uint64_t fnv1a_imp(uint64_t h, const char* s)

@@ -5,8 +5,6 @@
 
 #include "utils.h"
 
-const unsigned long PLUGIN_POOL_TAG = 'LEDS';
-
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
 
@@ -74,7 +72,7 @@ OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
     NTSTATUS status = ZwQueryObject(hFile, (OBJECT_INFORMATION_CLASS)1 /*ObjectNameInformation*/, pObjectName, 0, &dwSize);
     if (dwSize)
     {
-        pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, PLUGIN_POOL_TAG);
+        pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, POOL_TAG);
         if (pObjectName) {
             status = ZwQueryObject(hFile, (OBJECT_INFORMATION_CLASS)1 /*ObjectNameInformation*/, pObjectName, dwSize, &dwSize);
         }
@@ -85,7 +83,7 @@ OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
     }
 
     if (pObjectName) {
-        ExFreePoolWithTag(pObjectName, PLUGIN_POOL_TAG);
+        ExFreePoolWithTag(pObjectName, POOL_TAG);
         pObjectName = nullptr;
     }
     return nullptr;

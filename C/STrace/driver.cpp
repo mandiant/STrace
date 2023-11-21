@@ -14,8 +14,6 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG32 probeId, ULONG32 paramCount, ULONG64* pArgs, ULONG32 pArgSize, void* pStackArgs);
 extern "C" __declspec(dllexport) void DtEtwpEventCallback(PEVENT_HEADER pEventHeader, ULONG32 a, PGUID pProviderGuid, ULONG32 b);
 
-
-
 NTSTATUS SetCallbackApi(const char* syscallName, ULONG64 probeId) {
     if (!TraceSystemApi || !TraceSystemApi->KeSetSystemServiceCallback) {
         return STATUS_UNSUCCESSFUL;

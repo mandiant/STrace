@@ -19,13 +19,13 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{CD47158C-73E3-4197-AE90-92DC38D8BC0E}</ProjectGuid>
+    <ProjectGuid>{f5816619-f0b3-4ed6-9c7d-6247efe1d29b}</ProjectGuid>
     <TemplateGuid>{dd38f7fc-d7bd-488b-9242-7d8754cde80d}</TemplateGuid>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <Configuration>Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <RootNamespace>FileDeleteRecordPluginDriver</RootNamespace>
+    <RootNamespace>LogSyscallsPluginDriver</RootNamespace>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -143,9 +143,12 @@
   <ItemGroup>
     <ClInclude Include="Constants.h" />
     <ClInclude Include="Interface.h" />
+    <ClInclude Include="magic_enum.hpp" />
     <ClInclude Include="MyStdint.h" />
     <ClInclude Include="NtBuild.h" />
     <ClInclude Include="NtStructs.h" />
+    <ClInclude Include="phantom_type.h" />
+    <ClInclude Include="probedefs.h" />
     <ClInclude Include="string.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="vector.h" />

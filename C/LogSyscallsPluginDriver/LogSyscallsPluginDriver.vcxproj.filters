@@ -51,5 +51,14 @@
     <ClInclude Include="NtStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="magic_enum.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="phantom_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="probedefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
