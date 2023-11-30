@@ -14,7 +14,8 @@ UNICODE_STRING WideToUnicodeString(PCWSTR SourceString)
 			Size = MaxSize;
 		DestinationString.Length = (USHORT)Size;
 		DestinationString.MaximumLength = (USHORT)Size + sizeof(UNICODE_NULL);
-	} else {
+	}
+	else {
 		DestinationString.Length = 0;
 		DestinationString.MaximumLength = 0;
 	}
