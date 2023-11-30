@@ -303,14 +303,10 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS HandlePluginLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
-    char* input = (char*)Irp->AssociatedIrp.SystemBuffer;
-    uint64_t inputLen = IrpStack->Parameters.DeviceIoControl.InputBufferLength;
-
+NTSTATUS HandlePluginLoad() {
     // only 1 plugin is allowed to load at a time
     NTSTATUS status = STATUS_SUCCESS;
     if (!pluginData.isLoaded()) {
-        
         status = pluginData.load();
         if(!NT_SUCCESS(status))
         {
@@ -334,11 +330,6 @@ NTSTATUS HandlePluginLoad(PIRP Irp, PIO_STACK_LOCATION IrpStack) {
     }
 
 exit:
-    // Zero the output buffer (SystemBuffer is copied to output on IoCompletion)
-    memset(input, 0, inputLen);
-
-    // Assign read length to Information
-    Irp->IoStatus.Information = inputLen;
     return status;
 }
 
@@ -411,7 +402,7 @@ Return Value:
     {
     case IOCTL_LOADDLL:
         LOG_INFO("Starting Plugin load\r\n");
-        Status = HandlePluginLoad(Irp, IrpStack);
+        Status = HandlePluginLoad();
         break;
     case IOCTL_UNLOADDLL:
         LOG_INFO("Starting Plugin unload\r\n");
@@ -422,7 +413,8 @@ Return Value:
         break;
     }
     
-    exit:
+exit:
+    Irp->IoStatus.Information = 0;
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return Status;
