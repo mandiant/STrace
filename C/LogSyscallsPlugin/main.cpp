@@ -1,22 +1,31 @@
-#include <stdint.h>
-#include <intrin.h>
+#pragma warning(disable: 4996) //exallocatepoolwithtag
+#pragma warning(disable: 4244) // conversion from uint64_t to base, possible loss of data
+#pragma warning(disable: 4100) // unreferenced param
+#include <ntifs.h>
 
-
-#include "Interface.h"
-#include "crt.h"
+#include "interface.h"
 #include "utils.h"
-#include "config.h"
 #include "probedefs.h"
-#include "string.h"
-#include "magic_enum.hpp"
+
+const unsigned long PLUGIN_POOL_TAG = ' xtS';
 
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
 
+#ifdef DBG
+#define DBGPRINT(format, ...)  DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[STRACE] " format "\n", __VA_ARGS__)
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_ERROR(fmt,...)  g_Apis.pLogPrint(LogLevelError, __FUNCTION__, fmt,   __VA_ARGS__)
+#else
+#define DBGPRINT(format, ...)
+#define LOG_DEBUG(fmt,...)
+#define LOG_INFO(fmt,...)
+#define LOG_WARN(fmt,...)
+#define LOG_ERROR(fmt,...)
+#endif
+
 
 extern "C" __declspec(dllexport) void StpInitialize(PluginApis & pApis) {
 	g_Apis = pApis;
@@ -973,9 +982,22 @@ void PrintStackTrace(CallerInfo& callerinfo) {
 	}
 }
 
+enum class LiveKernelDumpFlags : ULONG {
+	KernelPages = 0,
+	UserAndKernelPages = 1,
+	MiniDump = 2,
+	HyperVAndKernelPages = 4,
+	UserAndHyperVAndKernelPages = 5 // UserAndKernelPages & HyperVAndKernelPages
+};
+
+// C:\Windows\LiveKernelReports OR path within HKLM\system\currentcontrolset\control\crashcontrol\livekernelreports
+// ComponentName: Name of folder created in report directory
+// BugCheckCode: Code shown to user in the generated .dmp file when loaded in windbg
+// P1 - P4 arbitrary parameters, shown to user as BUGCHECK_P1-... in the generated .dmp file when loaded in windbg
+extern "C" __declspec(dllimport) void NTAPI DbgkWerCaptureLiveKernelDump(const wchar_t* ComponentName, ULONG BugCheckCode, ULONG_PTR P1, ULONG_PTR P2, ULONG_PTR P3, ULONG_PTR P4, LiveKernelDumpFlags flags);
+
 void LiveKernelDump(LiveKernelDumpFlags flags)
 {
-	const auto MANUALLY_INITIATED_CRASH = 0xE2;
 	DbgkWerCaptureLiveKernelDump(L"STRACE", MANUALLY_INITIATED_CRASH, 1, 3, 3, 7, flags);
 }
 
@@ -988,8 +1010,8 @@ extern "C" __declspec(dllexport) bool StpIsTarget(CallerInfo & callerinfo) {
 ASSERT_INTERFACE_IMPLEMENTED(StpIsTarget, tStpIsTarget, "StpIsTarget does not match the interface type");
 
 /*
-This is a funny little trick. In a switch case, if you define a new scope with locals they all 
-get lifted to the parent scope which can allocate lots of stack space even if that case isn't 
+This is a funny little trick. In a switch case, if you define a new scope with locals they all
+get lifted to the parent scope which can allocate lots of stack space even if that case isn't
 always taken. The fix for that is to not define locals in a switch case, and call a function instead.
 But that's annoying and breaks cleanly putting the code in the switch body. Instead, we can define a lambda.
 
@@ -1019,18 +1041,18 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		switch (type_id) {
 		case get_type_id<MY_MEMORY_INFORMATION_CLASS>():
 			PRINTER(
-				string_printf(argsString, sprintf_tmp_buf, "%d - MEM_INFO: %s %d", argIdx, get_enum_value_name<MEMORY_INFORMATION_CLASS>(argValue), argValue);
+				string_printf(argsString, sprintf_tmp_buf, "%d - MEM_INFO: %s %d", argIdx, get_enum_value_name<COMPLETE_MEMORY_INFORMATION_CLASS>(argValue), argValue);
 			);
 			break;
-		case get_type_id<MY_BOOLEAN>(): 
+		case get_type_id<MY_BOOLEAN>():
 			PRINTER(
 				string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN: %s", argIdx, argValue ? "TRUE" : "FALSE");
 			);
 			break;
-		case get_type_id<MY_PBOOLEAN>(): 
+		case get_type_id<MY_PBOOLEAN>():
 			PRINTER(
 				BOOLEAN val = readUserArgPtr<PBOOLEAN>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN*: %X->(%s)", argIdx, argValue, val ? "TRUE" : "FALSE");
+			string_printf(argsString, sprintf_tmp_buf, "%d - BOOLEAN*: %X->(%s)", argIdx, argValue, val ? "TRUE" : "FALSE");
 			);
 			break;
 		case get_type_id<UCHAR>():
@@ -1045,11 +1067,10 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 				string_printf(argsString, sprintf_tmp_buf, "%d - INT16: %04X", argIdx, argValue);
 			);
 			break;
-		case get_type_id<PUINT16>():
 		case get_type_id<PINT16>():
 			PRINTER(
 				UINT16 val = readUserArgPtr<PUINT16>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - INT16*: %X->(%04X)", argIdx, argValue, val);
+			string_printf(argsString, sprintf_tmp_buf, "%d - INT16*: %X->(%04X)", argIdx, argValue, val);
 			);
 			break;
 		case get_type_id<UINT32>():
@@ -1062,8 +1083,8 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		case get_type_id<PINT32>():
 			PRINTER(
 				UINT32 val = readUserArgPtr<PUINT32>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - INT32*: %X->(%X)", argIdx, argValue, val);
-			);	
+			string_printf(argsString, sprintf_tmp_buf, "%d - INT32*: %X->(%X)", argIdx, argValue, val);
+			);
 			break;
 		case get_type_id<ULONG>():
 		case get_type_id<LONG>():
@@ -1075,7 +1096,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		case get_type_id<PLONG>():
 			PRINTER(
 				ULONG val = readUserArgPtr<PULONG>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - LONG*: %X->(%X)", argIdx, argValue, val);
+			string_printf(argsString, sprintf_tmp_buf, "%d - LONG*: %X->(%X)", argIdx, argValue, val);
 			);
 			break;
 		case get_type_id<ULONGLONG>():
@@ -1088,7 +1109,7 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		case get_type_id<PULONGLONG>():
 			PRINTER(
 				ULONGLONG val = readUserArgPtr<PULONGLONG>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG*: %X->(%X)", argIdx, argValue, val);
+			string_printf(argsString, sprintf_tmp_buf, "%d - LONGLONG*: %X->(%X)", argIdx, argValue, val);
 			);
 			break;
 		case get_type_id<PVOID>():
@@ -1099,71 +1120,71 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		case get_type_id<PVOID*>():
 			PRINTER(
 				PVOID val = readUserArgPtr<PVOID*>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - PVOID*: %X->(%X)", argIdx, argValue, val);
+			string_printf(argsString, sprintf_tmp_buf, "%d - PVOID*: %X->(%X)", argIdx, argValue, val);
 			);
 			break;
 		case get_type_id<PSTR>():
 			PRINTER(
 				char tmp[256] = { 0 };
 
-				uint8_t i = 0;
-				for (; i < sizeof(tmp); i++) {
-					if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((char*)argValue) + i), 1, 1, TRUE))
-						break;
+			uint8_t i = 0;
+			for (; i < sizeof(tmp); i++) {
+				if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((char*)argValue) + i), 1, 1, TRUE))
+					break;
 
-					if (tmp[i] == 0)
-						break;
-				}
+				if (tmp[i] == 0)
+					break;
+			}
 
-				if (i > 0) {
-					tmp[i] = 0; // to be safe
-					string_printf(argsString, sprintf_tmp_buf, "%d - CHAR*: %s", argIdx, tmp);
-				}
+			if (i > 0) {
+				tmp[i] = 0; // to be safe
+				string_printf(argsString, sprintf_tmp_buf, "%d - CHAR*: %s", argIdx, tmp);
+			}
 			);
 			break;
 		case get_type_id<PWSTR>():
 			PRINTER(
 				WCHAR tmp[128] = { 0 };
 
-				uint8_t i = 0;
-				for (; i < sizeof(tmp); i++) {
-					if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((wchar_t*)argValue) + i), sizeof(WCHAR), sizeof(WCHAR), TRUE))
-						break;
+			uint8_t i = 0;
+			for (; i < sizeof(tmp); i++) {
+				if (!g_Apis.pTraceAccessMemory(&tmp[i], (ULONG_PTR)(((wchar_t*)argValue) + i), sizeof(WCHAR), sizeof(WCHAR), TRUE))
+					break;
 
-					if (tmp[i] == 0)
-						break;
-				}
+				if (tmp[i] == 0)
+					break;
+			}
 
-				if (i > 0) {
-					tmp[i] = 0; // to be safe
-					string_printf(argsString, sprintf_tmp_buf, "%d - WCHAR*: %S", argIdx, tmp);
-				}
+			if (i > 0) {
+				tmp[i] = 0; // to be safe
+				string_printf(argsString, sprintf_tmp_buf, "%d - WCHAR*: %S", argIdx, tmp);
+			}
 			);
 			break;
-		case get_type_id<MY_VIRTUAL_MEMORY_INFORMATION_CLASS>(): 
+		case get_type_id<MY_VIRTUAL_MEMORY_INFORMATION_CLASS>():
 			PRINTER(
-				string_printf(argsString, sprintf_tmp_buf, "%d - VM_INFO: %s", argIdx, get_enum_value_name<VIRTUAL_MEMORY_INFORMATION_CLASS>(argValue));
+				string_printf(argsString, sprintf_tmp_buf, "%d - VM_INFO: %s", argIdx, get_enum_value_name<COMPLETE_VIRTUAL_MEMORY_INFORMATION_CLASS>(argValue));
 			);
 			break;
 		case get_type_id<MY_PROCESSINFOCLASS>():
 			PRINTER(
-				string_printf(argsString, sprintf_tmp_buf, "%d - PROC_INFO_CLASS: %s", argIdx, get_enum_value_name<PROCESSINFOCLASS>(argValue));
+				string_printf(argsString, sprintf_tmp_buf, "%d - PROC_INFO_CLASS: %s", argIdx, get_enum_value_name<COMPLETE_PROCESSINFOCLASS>(argValue));
 			);
 			break;
 		case get_type_id<MY_TOKENINFOCLASS>():
 			PRINTER(
-				string_printf(argsString, sprintf_tmp_buf, "%d - TOKEN_INFO_CLASS: %s", argIdx, get_enum_value_name<TOKEN_INFO_CLASS>(argValue));
+				string_printf(argsString, sprintf_tmp_buf, "%d - TOKEN_INFO_CLASS: %s", argIdx, get_enum_value_name<COMPLETE_TOKEN_INFO_CLASS>(argValue));
 			);
 			break;
 		case get_type_id<MY_THREADINFOCLASS>():
 			PRINTER(
-				string_printf(argsString, sprintf_tmp_buf, "%d - THREADINFOCLASS: %s", argIdx, get_enum_value_name<THREADINFOCLASS>(argValue));
+				string_printf(argsString, sprintf_tmp_buf, "%d - THREADINFOCLASS: %s", argIdx, get_enum_value_name<COMPLETE_THREADINFOCLASS>(argValue));
 			);
 			break;
 		case get_type_id<MY_PMEMORY_RANGE_ENTRY>():
 			PRINTER(
 				MEMORY_RANGE_ENTRY range = readUserArgPtr<PMEMORY_RANGE_ENTRY>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - VA: %X (Size: %X)", argIdx, range.VirtualAddress, range.NumberOfBytes);
+			string_printf(argsString, sprintf_tmp_buf, "%d - VA: %X (Size: %X)", argIdx, range.VirtualAddress, range.NumberOfBytes);
 			);
 			break;
 		case get_type_id<MY_HANDLE>():
@@ -1174,70 +1195,70 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 		case get_type_id<MY_PHANDLE>():
 			PRINTER(
 				HANDLE handle = readUserArgPtr<PHANDLE>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE*: %X->(%X)", argIdx, argValue, handle);
+			string_printf(argsString, sprintf_tmp_buf, "%d - HANDLE*: %X->(%X)", argIdx, argValue, handle);
 			);
 			break;
 		case get_type_id<MY_ACCESS_MASK>():
 			PRINTER(
 				MY_ACCESS_MASK mask = (MY_ACCESS_MASK)argValue;
-				string_printf(argsString, sprintf_tmp_buf, "%d - ACCESS_MASK: %X", argIdx, mask);
-				if (mask & GENERIC_READ || mask & GENERIC_WRITE || mask & GENERIC_EXECUTE || mask & FILE_READ_DATA || mask & FILE_READ_ATTRIBUTES ||
-					mask & FILE_READ_EA || mask & FILE_WRITE_DATA || mask & FILE_WRITE_ATTRIBUTES || mask & FILE_WRITE_EA || mask & FILE_APPEND_DATA || mask & FILE_EXECUTE) {
-					string_printf(argsString, sprintf_tmp_buf, " (");
-					if (mask & GENERIC_READ) {
-						string_printf(argsString, sprintf_tmp_buf, "GENERIC_READ|");
-					}
-					if (mask & GENERIC_WRITE) {
-						string_printf(argsString, sprintf_tmp_buf, "GENERIC_WRITE|");
-					}
-					if (mask & GENERIC_EXECUTE) {
-						string_printf(argsString, sprintf_tmp_buf, "GENERIC_EXECUTE|");
-					}
-					if (mask & FILE_READ_DATA) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_READ_DATA|");
-					}
-					if (mask & FILE_READ_ATTRIBUTES) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_READ_ATTRIBUTES|");
-					}
-					if (mask & FILE_READ_EA) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_READ_EA|");
-					}
-					if (mask & FILE_WRITE_DATA) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_DATA|");
-					}
-					if (mask & FILE_WRITE_ATTRIBUTES) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_ATTRIBUTES|");
-					}
-					if (mask & FILE_WRITE_EA) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_EA|");
-					}
-					if (mask & FILE_APPEND_DATA) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_APPEND_DATA|");
-					}
-					if (mask & FILE_EXECUTE) {
-						string_printf(argsString, sprintf_tmp_buf, "FILE_EXECUTE|");
-					}
-					string_printf(argsString, sprintf_tmp_buf, ")");
+			string_printf(argsString, sprintf_tmp_buf, "%d - ACCESS_MASK: %X", argIdx, mask);
+			if (mask & GENERIC_READ || mask & GENERIC_WRITE || mask & GENERIC_EXECUTE || mask & FILE_READ_DATA || mask & FILE_READ_ATTRIBUTES ||
+				mask & FILE_READ_EA || mask & FILE_WRITE_DATA || mask & FILE_WRITE_ATTRIBUTES || mask & FILE_WRITE_EA || mask & FILE_APPEND_DATA || mask & FILE_EXECUTE) {
+				string_printf(argsString, sprintf_tmp_buf, " (");
+				if (mask & GENERIC_READ) {
+					string_printf(argsString, sprintf_tmp_buf, "GENERIC_READ|");
 				}
+				if (mask & GENERIC_WRITE) {
+					string_printf(argsString, sprintf_tmp_buf, "GENERIC_WRITE|");
+				}
+				if (mask & GENERIC_EXECUTE) {
+					string_printf(argsString, sprintf_tmp_buf, "GENERIC_EXECUTE|");
+				}
+				if (mask & FILE_READ_DATA) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_READ_DATA|");
+				}
+				if (mask & FILE_READ_ATTRIBUTES) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_READ_ATTRIBUTES|");
+				}
+				if (mask & FILE_READ_EA) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_READ_EA|");
+				}
+				if (mask & FILE_WRITE_DATA) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_DATA|");
+				}
+				if (mask & FILE_WRITE_ATTRIBUTES) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_ATTRIBUTES|");
+				}
+				if (mask & FILE_WRITE_EA) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_WRITE_EA|");
+				}
+				if (mask & FILE_APPEND_DATA) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_APPEND_DATA|");
+				}
+				if (mask & FILE_EXECUTE) {
+					string_printf(argsString, sprintf_tmp_buf, "FILE_EXECUTE|");
+				}
+				string_printf(argsString, sprintf_tmp_buf, ")");
+			}
 			);
 			break;
 		case get_type_id<PLARGE_INTEGER>():
 			PRINTER(
 				LARGE_INTEGER largeInt = readUserArgPtr<PLARGE_INTEGER>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - LARGE_INTEGER: %08X", argIdx, largeInt.QuadPart);
+			string_printf(argsString, sprintf_tmp_buf, "%d - LARGE_INTEGER: %08X", argIdx, largeInt.QuadPart);
 			);
 			break;
 		case get_type_id<PUNICODE_STRING>():
 			PRINTER(
 				UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(argValue, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - USTR: %wZ", argIdx, &ustr);
+			string_printf(argsString, sprintf_tmp_buf, "%d - USTR: %wZ", argIdx, &ustr);
 			);
 			break;
 		case get_type_id<POBJECT_ATTRIBUTES>():
 			PRINTER(
 				OBJECT_ATTRIBUTES attrs = readUserArgPtr<POBJECT_ATTRIBUTES>(argValue, g_Apis);
-				UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(attrs.ObjectName, g_Apis);
-				string_printf(argsString, sprintf_tmp_buf, "%d - OBJ_ATTRS::USTR: %wZ", argIdx, &ustr);
+			UNICODE_STRING ustr = readUserArgPtr<PUNICODE_STRING>(attrs.ObjectName, g_Apis);
+			string_printf(argsString, sprintf_tmp_buf, "%d - OBJ_ATTRS::USTR: %wZ", argIdx, &ustr);
 			);
 			break;
 		default:
@@ -1277,16 +1298,46 @@ extern "C" __declspec(dllexport) void StpCallbackReturn(ULONG64 pService, ULONG3
 }
 ASSERT_INTERFACE_IMPLEMENTED(StpCallbackReturn, tStpCallbackReturnPlugin, "StpCallbackEntry does not match the interface type");
 
-BOOL APIENTRY Main(HMODULE hModule, DWORD  reason, LPVOID lpReserved)
+
+NTSTATUS DeviceCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp)
 {
-	switch (reason)
-	{
-	case DLL_PROCESS_ATTACH:
-	case DLL_THREAD_ATTACH:
-	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
-		break;
-	}
-	return TRUE;
+    UNREFERENCED_PARAMETER(DeviceObject);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    return STATUS_SUCCESS;
 }
 
+VOID DeviceUnload(_In_ PDRIVER_OBJECT DriverObject)
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+    DBGPRINT("FileDeleteRecord::DeviceUnload");
+}
+
+/*
+*   /GS- must be set to disable stack cookies and have DriverEntry
+*   be the entrypoint. GsDriverEntry sets up stack cookie and calls
+*   Driver Entry normally.
+*/
+NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
+{
+    UNREFERENCED_PARAMETER(RegistryPath);
+
+    // !MUST BE FIRST FOR LOGGING TO WORK!
+	// we include usermode folders for the STL to work 
+    // which don't link the stdio stuff correctly. 
+    // We do this to fetch the correct kernel implementation....gross...yes I know
+	UNICODE_STRING name = { 0 };
+	RtlInitUnicodeString(&name, L"_snprintf");
+	g_p_snprintf = (t_snprintf)MmGetSystemRoutineAddress(&name);
+
+    DBGPRINT("FileDeleteRecord::DriverEntry()");
+	
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = DeviceCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = DeviceCreateClose;
+    DriverObject->DriverUnload = DeviceUnload;
+
+    return STATUS_SUCCESS;
+}
