@@ -1,10 +1,12 @@
 #pragma once
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <subauth.h>
-#include <stdint.h>
-#include <type_traits>
-#include "crt.h"
+#include <ntifs.h>
+#include <ntstatus.h>
+#define NTSTRSAFE_NO_CB_FUNCTIONS
+#include <ntstrsafe.h>
+
+#include "MyStdint.h"
+#include "Constants.h"
+#include "NtStructs.h"
 
 class MachineState
 {
@@ -57,6 +59,14 @@ public:
 	}
 };
 
+typedef enum _LOG_LEVEL_OPTIONS
+{
+	LogLevelDebug = 0x10ul,
+	LogLevelInfo = 0x20ul,
+	LogLevelWarn = 0x40ul,
+	LogLevelError = 0x80ul,
+} LOG_LEVEL_OPTIONS;
+
 typedef LONG NTSTATUS;
 typedef bool(*tSetTlsData)(uint64_t value, uint8_t slot);
 typedef bool(*tGetTlsData)(uint64_t& value, uint8_t slot);
@@ -66,7 +76,6 @@ typedef NTSTATUS(*tSetCallbackApi)(const char* syscallName, ULONG64 probeId);
 typedef NTSTATUS(*tUnSetCallbackApi)(const char* syscallName);
 typedef NTSTATUS(*tSetEtwCallbackApi)(GUID providerGuid);
 typedef NTSTATUS(*tUnSetEtwCallbackApi)();
-typedef PVOID(NTAPI* tMmGetSystemRoutineAddress)(PUNICODE_STRING SystemRoutineName);
 typedef BOOLEAN(*tTraceAccessMemory)(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
 
 class PluginApis {
@@ -81,10 +90,10 @@ public:
 	tUnSetCallbackApi pUnsetCallback;
 	tSetEtwCallbackApi pEtwSetCallback;
 	tUnSetEtwCallbackApi pEtwUnSetCallback;
-	tMmGetSystemRoutineAddress pGetSystemRoutineAddress;
 	tTraceAccessMemory pTraceAccessMemory;
 };
 
+#define MAX_PATH    260
 #define MINCHAR     0x80        // winnt
 #define MAXCHAR     0x7f        // winnt
 #define MINSHORT    0x8000      // winnt
@@ -96,11 +105,12 @@ public:
 #define MAXULONG    0xffffffff  // winnt
 
 UNICODE_STRING WideToUnicodeString(PCWSTR SourceString);
+NTSTATUS MbToUnicodeString(PSTR SourceString, PUNICODE_STRING DestinationString);
 
 template<typename T>
 T ResolveApi(const wchar_t* name, PluginApis& apis) {
 	auto ustr = WideToUnicodeString(name);
-	return (T)apis.pGetSystemRoutineAddress(&ustr);
+	return (T)MmGetSystemRoutineAddress(&ustr);
 }
 
 class CallerInfo
@@ -125,13 +135,6 @@ typedef void(*tStpCallbackReturnPlugin)(ULONG64 pService, ULONG32 probeId, Machi
 typedef void(*tStpInitialize)(PluginApis& pApis);
 typedef void(*tStpDeInitialize)();
 
-typedef enum _LOG_LEVEL_OPTIONS
-{
-	LogLevelDebug = 0x10ul,
-	LogLevelInfo = 0x20ul,
-	LogLevelWarn = 0x40ul,
-	LogLevelError = 0x80ul,
-} LOG_LEVEL_OPTIONS;
 
 // ETW field type definitions, see TlgIn_t and TlgOut_t in TraceLoggingProvider.h
 #define ETW_FIELD(in, out)  (in | 0x80 | out << 8)
@@ -233,4 +236,4 @@ typedef enum _ETW_FIELD_TYPE
 } ETW_FIELD_TYPE;
 
 // Assert a function is the same type as a function pointer typedef, or throw msg as a compiler error
-#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(std::is_same_v<decltype(&Implementer), tFnTypeDef>, msg); 
+#define ASSERT_INTERFACE_IMPLEMENTED(Implementer, tFnTypeDef, msg) static_assert(is_same_v<decltype(&Implementer), tFnTypeDef>, msg); 
