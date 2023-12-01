@@ -192,6 +192,8 @@ void LoadPlugin() {
         printf("[!] Error writing plugin driver: %d\n", GetLastError());
         return;
     }
+
+    // Close Immediately so Loading Driver succeeds
     CloseHandle(hFile);
     hFile = INVALID_HANDLE_VALUE;
 
