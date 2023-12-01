@@ -1,5 +1,4 @@
 #pragma once
-#include "KernelApis.h"
 
 class String {
 public:

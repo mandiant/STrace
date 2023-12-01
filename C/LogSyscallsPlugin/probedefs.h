@@ -3,6 +3,8 @@
 #include "phantom_type.h"
 #include "magic_enum.hpp"
 
+#include <minwindef.h>
+
 #include <string_view>
 
 enum PROBE_IDS : ULONG64 {
@@ -476,12 +478,6 @@ strong_typedef(PVOID, MY_HANDLE);
 strong_typedef(MY_HANDLE*, MY_PHANDLE);
 strong_typedef(BYTE, MY_BOOLEAN);
 strong_typedef(MY_BOOLEAN*, MY_PBOOLEAN);
-
-typedef struct _MEMORY_RANGE_ENTRY {
-    PVOID VirtualAddress;
-    SIZE_T NumberOfBytes;
-} MEMORY_RANGE_ENTRY, * PMEMORY_RANGE_ENTRY;
-
 strong_typedef(PVOID, MY_PIO_APC_ROUTINE);
 strong_typedef(UINT32, MY_KPROFILE_SOURCE);
 strong_typedef(PVOID, MY_PCWNF_STATE_NAME);
@@ -520,10 +516,10 @@ const char* get_enum_value_name(auto enum_val) {
     if (name.length() == 0) {
         return "UNKNOWN_ENUM_VAL";
     }
-    return name.data(); // safe, returns pointer view holds
+    return (const char*)name.data(); // safe, returns pointer view holds
 }
 
-enum class VIRTUAL_MEMORY_INFORMATION_CLASS
+enum class COMPLETE_VIRTUAL_MEMORY_INFORMATION_CLASS : UINT32
 {
     VmPrefetchInformation, // ULONG
     VmPagePriorityInformation, // OFFER_PRIORITY
@@ -536,7 +532,7 @@ enum class VIRTUAL_MEMORY_INFORMATION_CLASS
     MaxVmInfoClass
 };
 
-enum class MEMORY_INFORMATION_CLASS
+enum class COMPLETE_MEMORY_INFORMATION_CLASS : UINT32
 {
     MemoryBasicInformation, // MEMORY_BASIC_INFORMATION
     MemoryWorkingSetInformation, // MEMORY_WORKING_SET_INFORMATION
@@ -555,7 +551,7 @@ enum class MEMORY_INFORMATION_CLASS
     MaxMemoryInfoClass
 };
 
-enum class PROCESSINFOCLASS : UINT32
+enum class COMPLETE_PROCESSINFOCLASS : UINT32
 {
     ProcessBasicInformation, // q: PROCESS_BASIC_INFORMATION, PROCESS_EXTENDED_BASIC_INFORMATION
     ProcessQuotaLimits, // qs: QUOTA_LIMITS, QUOTA_LIMITS_EX
@@ -672,7 +668,7 @@ enum class PROCESSINFOCLASS : UINT32
     MaxProcessInfoClass
 };
 
-enum class TOKEN_INFO_CLASS : UINT32
+enum class COMPLETE_TOKEN_INFO_CLASS : UINT32
 {
     TokenNULL,
     TokenUser, // q: TOKEN_USER
@@ -726,7 +722,7 @@ enum class TOKEN_INFO_CLASS : UINT32
     MaxTokenInfoClass,
 };
 
-enum class THREADINFOCLASS : UINT32
+enum class COMPLETE_THREADINFOCLASS : UINT32
 {
     ThreadBasicInformation, // q: THREAD_BASIC_INFORMATION
     ThreadTimes, // q: KERNEL_USER_TIMES
@@ -786,6 +782,69 @@ enum class THREADINFOCLASS : UINT32
     ThreadEffectivePagePriority,
     MaxThreadInfoClass
 };
+
+typedef enum _JOBOBJECTINFOCLASS {
+    JobObjectBasicAccountingInformation = 1,
+    JobObjectBasicLimitInformation,
+    JobObjectBasicProcessIdList,
+    JobObjectBasicUIRestrictions,
+    JobObjectSecurityLimitInformation,  // deprecated
+    JobObjectEndOfJobTimeInformation,
+    JobObjectAssociateCompletionPortInformation,
+    JobObjectBasicAndIoAccountingInformation,
+    JobObjectExtendedLimitInformation,
+    JobObjectJobSetInformation,
+    JobObjectGroupInformation,
+    JobObjectNotificationLimitInformation,
+    JobObjectLimitViolationInformation,
+    JobObjectGroupInformationEx,
+    JobObjectCpuRateControlInformation,
+    JobObjectCompletionFilter,
+    JobObjectCompletionCounter,
+
+    //
+    //
+
+    JobObjectReserved1Information = 18,
+    JobObjectReserved2Information,
+    JobObjectReserved3Information,
+    JobObjectReserved4Information,
+    JobObjectReserved5Information,
+    JobObjectReserved6Information,
+    JobObjectReserved7Information,
+    JobObjectReserved8Information,
+    JobObjectReserved9Information,
+    JobObjectReserved10Information,
+    JobObjectReserved11Information,
+    JobObjectReserved12Information,
+    JobObjectReserved13Information,
+    JobObjectReserved14Information = 31,
+    JobObjectNetRateControlInformation,
+    JobObjectNotificationLimitInformation2,
+    JobObjectLimitViolationInformation2,
+    JobObjectCreateSilo,
+    JobObjectSiloBasicInformation,
+    JobObjectReserved15Information = 37,
+    JobObjectReserved16Information = 38,
+    JobObjectReserved17Information = 39,
+    JobObjectReserved18Information = 40,
+    JobObjectReserved19Information = 41,
+    JobObjectReserved20Information = 42,
+    JobObjectReserved21Information = 43,
+    JobObjectReserved22Information = 44,
+    JobObjectReserved23Information = 45,
+    JobObjectReserved24Information = 46,
+    JobObjectReserved25Information = 47,
+    JobObjectReserved26Information = 48,
+    JobObjectReserved27Information = 49,
+    MaxJobObjectInfoClass
+} JOBOBJECTINFOCLASS;
+
+typedef struct _JOB_SET_ARRAY {
+    HANDLE JobHandle;   // Handle to job object to insert
+    DWORD MemberLevel;  // Level of this job in the set. Must be > 0. Can be sparse.
+    DWORD Flags;        // Unused. Must be zero
+} JOB_SET_ARRAY, * PJOB_SET_ARRAY;
 
 typedef NTSTATUS(NTAPI* tLockProductActivationKeys) (UINT32*, UINT32*);
 typedef NTSTATUS(NTAPI* tWaitHighEventPair) (MY_HANDLE);

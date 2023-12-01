@@ -121,16 +121,11 @@ private:
 	}
 
 	void deallocate(char* p) {
-		if (!p) {
-			return;
-		}
-
 		auto pExFreePoolWithTag = ResolveApi<tExFreePoolWithTag>(L"ExFreePoolWithTag", m_apis);
 		if (!pExFreePoolWithTag) {
 			__debugbreak();
 		}
 		pExFreePoolWithTag(p, '0CEV');
-		p = nullptr;
 	}
 
 	size_t size;

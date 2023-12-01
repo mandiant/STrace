@@ -31,14 +31,7 @@ public:
         zero();
     }
 
-    bool isLoaded()
-    {
-        bool _loaded;
-        lock();
-        _loaded = loaded;
-        unlock();
-        return _loaded;
-    }
+    inline bool isLoaded() { return loaded; }
 
     NTSTATUS load() {
 
@@ -57,7 +50,6 @@ public:
             LOG_ERROR("ZwLoadDriver Failed with: 0x%08X\r\n", status);
             goto exit;
         }
-        InterlockedIncrement(&loaded);
 
         status = setPluginBaseAddress();
         if (!NT_SUCCESS(status)){
@@ -79,7 +71,7 @@ public:
         }
 
         LOG_INFO("[+] Plugin Loaded at: %I64X\r\n", pImageBase);
-
+        InterlockedIncrement(&loaded);
     exit:
         if (!NT_SUCCESS(status)){
             unload(TRUE);
@@ -99,16 +91,29 @@ public:
             goto exit;
         }
 
+        if (pDeInitialize) {
+            pDeInitialize();
+
+            // prevent double deinitialize
+            pDeInitialize = 0;
+        }
+
+        // Must mark unloaded before unloading so strace doesn't attempt to call into
+        // an unloaded driver
+        InterlockedDecrement(&loaded);
         status = ZwUnloadDriver(&pluginServiceName);
         if (!NT_SUCCESS(status)){
             // If driver doesn't unload, then it is still loaded and we should
             // return the plugin to a loaded state and return an error
+            // plugin has been deinitialized but, another call to this could
+            // possibly get the driver unloaded, but callbacks will not be occuring
+            // at this point.
+            InterlockedDecrement(&loaded);
             LOG_INFO("[!] Failed to unload plugin driver\r\n");
             goto exit;
         }
-        InterlockedDecrement(&loaded);
+        
         zero();
-
         status = STATUS_SUCCESS;
     exit:
         if(!locked)unlock();

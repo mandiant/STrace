@@ -8,11 +8,21 @@
 #pragma warning(disable: 6011)
 PluginApis g_Apis;
 
+#define PLUGIN_POOL_TAG         'dFtS'
+
+#ifdef DBG
 #define DBGPRINT(format, ...)  DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[STRACE] " format "\n", __VA_ARGS__)
 #define LOG_DEBUG(fmt,...)  g_Apis.pLogPrint(LogLevelDebug, __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_INFO(fmt,...)   g_Apis.pLogPrint(LogLevelInfo,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_WARN(fmt,...)   g_Apis.pLogPrint(LogLevelWarn,  __FUNCTION__, fmt,   __VA_ARGS__)
 #define LOG_ERROR(fmt,...)  g_Apis.pLogPrint(LogLevelError, __FUNCTION__, fmt,   __VA_ARGS__)
+#else
+#define DBGPRINT(format, ...)
+#define LOG_DEBUG(fmt,...)
+#define LOG_INFO(fmt,...)
+#define LOG_WARN(fmt,...)
+#define LOG_ERROR(fmt,...)
+#endif
 
 enum PROBE_IDS : ULONG64 {
     IdSetInformationFile = 0,
@@ -107,9 +117,9 @@ extern "C" __declspec(dllexport) void StpCallbackEntry(ULONG64 pService, ULONG32
 
                 if (pFilePath) {
                     LOG_INFO("File %wZ deleted\r\n", pFilePath->Name);
-                    //backupFile((wchar_t*)backup_directory, pFilePath->Name, hFile);
-                    //ExFreePoolWithTag(pFilePath, PLUGIN_POOL_TAG);
-                    //pFilePath = nullptr;
+                    backupFile((wchar_t*)backup_directory, pFilePath->Name, hFile);
+                    ExFreePoolWithTag(pFilePath, PLUGIN_POOL_TAG);
+                    pFilePath = nullptr;
                     LOG_INFO("File Backup Complete\r\n");
                 }
                 else {

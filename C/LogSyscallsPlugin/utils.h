@@ -1,24 +1,34 @@
 #pragma once
 
 // Include order matters here sadly. The C++ headers below may include C headers that re-define kernel apis. We must define our things first.
+#include <ntifs.h>
 #include "Interface.h"
-#include "KernelApis.h"
-#include "config.h"
 #include "string.h"
 
+// $(VC_IncludePath); required for these imports to work in the driver
 #define _ITERATOR_DEBUG_LEVEL 0
 #include <utility>
 #include <array>
 #include <span>
 #include <type_traits>
 
+#define ObjectNameInformation (OBJECT_INFORMATION_CLASS)1
+
+const unsigned long POOL_TAG = '0RTS';
+const wchar_t* backup_directory = L"\\??\\C:\\deleted";
+
 // You must pass a temporary buffer, so that sprintf may write into that first.
 // It's an argument, because then multiple calls can share the same temp buffer.
 // If it's a local, the compiler inlines these poorly and explodes local stack space quickly.
+typedef int(__cdecl* t_snprintf)(char*, size_t, const char*, ...);
+t_snprintf g_p_snprintf = nullptr;
+
 template<size_t BUFSZ, typename... Args>
-int string_printf(String& str, char (&tmpBuf)[BUFSZ], Args&&... args) {
+int string_printf(String& str, char(&tmpBuf)[BUFSZ], Args&&... args) {
     memset(tmpBuf, 0, sizeof(BUFSZ));
-    int size = _snprintf(tmpBuf, BUFSZ, std::forward<Args>(args)...);
+   
+    //assert(g_p_snprintf != nullptr)
+    int size = g_p_snprintf(tmpBuf, BUFSZ, std::forward<Args>(args)...);
     if (size < 0) {
         return -1;
     }
@@ -27,7 +37,7 @@ int string_printf(String& str, char (&tmpBuf)[BUFSZ], Args&&... args) {
     return size;
 }
 
-using hash_t = std::uint64_t;
+using hash_t = uint64_t;
 
 consteval uint64_t fnv1a_imp(uint64_t h, const char* s)
 {
@@ -53,7 +63,7 @@ struct arg_types {};
 
 template<typename R, typename... A>
 struct arg_types<R(*)(A...)> {
-    static constexpr std::array<uint64_t, sizeof...(A)> value = {get_type_id<A>()...};
+    static constexpr std::array<uint64_t, sizeof...(A)> value = { get_type_id<A>()... };
 };
 
 // msvc doesn't implement a constructor for std::span from iterators. This does that...
@@ -65,37 +75,35 @@ consteval auto make_span(It begin, It end) {
 template<typename Func>
 class FinalAction {
 public:
-	FinalAction(Func f) :FinalActionFunc(std::move(f)) {}
-	~FinalAction()
-	{
-		FinalActionFunc();
-	}
+    FinalAction(Func f) :FinalActionFunc(std::move(f)) {}
+    ~FinalAction()
+    {
+        FinalActionFunc();
+    }
 private:
-	Func FinalActionFunc;
+    Func FinalActionFunc;
 
-	/*Uses RAII to call a final function on destruction
-	C++ 11 version of java's finally (kindof)*/
+    /*Uses RAII to call a final function on destruction
+    C++ 11 version of java's finally (kindof)*/
 };
 
 template <typename F>
 FinalAction<F> finally(F f) {
-	return FinalAction<F>(f);
+    return FinalAction<F>(f);
 }
 
 template<typename T>
 T FnCast(uint64_t fnToCast, T pFnCastTo) {
-	PH_UNUSED(pFnCastTo);
-	return (T)fnToCast;
+    PH_UNUSED(pFnCastTo);
+    return (T)fnToCast;
 }
 
 template<typename T>
 T FnCast(void* fnToCast, T pFnCastTo) {
-	PH_UNUSED(pFnCastTo);
-	return (T)fnToCast;
+    PH_UNUSED(pFnCastTo);
+    return (T)fnToCast;
 }
 
-// analog of dtrace_copyin. Given a pointer to a usermode structure, safely read that structure in.
-// Dtrace returns a pointer to that result. We can be slightly nicer and give a copy of the value exactly.
 template<typename T, typename T2 = uint64_t>
 std::remove_pointer_t<T> readUserArgPtr(T2 pUserAddress, PluginApis& pApis) {
     std::remove_pointer_t<T> tmp = { 0 };
@@ -108,9 +116,9 @@ std::remove_pointer_t<T> readUserArgPtr(T2 pUserAddress, PluginApis& pApis) {
 }
 
 bool createFile(PUNICODE_STRING filePath, PHANDLE hFileOut) {
-    *hFileOut = INVALID_HANDLE_VALUE;
- 
-    OBJECT_ATTRIBUTES attrs = {0};
+    *hFileOut = NULL;
+
+    OBJECT_ATTRIBUTES attrs = { 0 };
     InitializeObjectAttributes(&attrs, filePath, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
 
     IO_STATUS_BLOCK IoStatus;
@@ -129,13 +137,13 @@ bool createFile(PUNICODE_STRING filePath, PHANDLE hFileOut) {
 }
 
 bool openFile(PUNICODE_STRING filePath, PHANDLE hFileOut) {
-    *hFileOut = INVALID_HANDLE_VALUE;
+    *hFileOut = NULL;
 
-    OBJECT_ATTRIBUTES attrs = {0};
+    OBJECT_ATTRIBUTES attrs = { 0 };
     InitializeObjectAttributes(&attrs, filePath, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
-    
+
     IO_STATUS_BLOCK IoStatus;
-    NTSTATUS Status = ZwOpenFile(hFileOut, 
+    NTSTATUS Status = ZwOpenFile(hFileOut,
         FILE_READ_DATA | SYNCHRONIZE,
         &attrs,
         &IoStatus,
@@ -153,7 +161,7 @@ bool backupFile(PWSTR backupDir, UNICODE_STRING backupFileName, HANDLE hFileSour
     // scan backwards until first slash
     PWCHAR fileName = backupFileName.Buffer + (backupFileName.Length - sizeof(wchar_t));
     size_t fileNameLen = 0;
-    while (*fileName != '\\') {
+    while (*fileName != L'\\') {
         fileName--;
         fileNameLen++;
     }
@@ -168,12 +176,12 @@ bool backupFile(PWSTR backupDir, UNICODE_STRING backupFileName, HANDLE hFileSour
     if (status != STATUS_SUCCESS)
         return false;
 
-    HANDLE hFileCopy = INVALID_HANDLE_VALUE;
+    HANDLE hFileCopy = NULL;
     auto close_handles = finally([&] {
-        if (hFileCopy != INVALID_HANDLE_VALUE) {
+        if (hFileCopy != NULL) {
             ZwClose(hFileCopy);
         }
-    });
+        });
 
     if (!createFile(&backupPath, &hFileCopy))
         return false;
@@ -249,8 +257,9 @@ NTSTATUS DuplicateUnicodeString(PCUNICODE_STRING SourceString, PUNICODE_STRING D
         DestinationString->Length = 0;
         DestinationString->MaximumLength = 0;
         DestinationString->Buffer = NULL;
-    } else {
-        UINT DestMaxLength = SourceString->Length;
+    }
+    else {
+        SIZE_T DestMaxLength = SourceString->Length;
 
         DestinationString->Buffer = (PWSTR)ExAllocatePoolWithTag(NonPagedPoolNx, DestMaxLength, Tag);
         if (DestinationString->Buffer == NULL)
@@ -258,31 +267,7 @@ NTSTATUS DuplicateUnicodeString(PCUNICODE_STRING SourceString, PUNICODE_STRING D
 
         memcpy(DestinationString->Buffer, SourceString->Buffer, SourceString->Length);
         DestinationString->Length = SourceString->Length;
-        DestinationString->MaximumLength = DestMaxLength;
+        DestinationString->MaximumLength = (USHORT)DestMaxLength;
     }
     return STATUS_SUCCESS;
-}
-
-OBJECT_NAME_INFORMATION* getFilePathFromHandle(HANDLE hFile) {
-    ULONG dwSize = 0;
-    OBJECT_NAME_INFORMATION* pObjectName = nullptr;
-    NTSTATUS status = ZwQueryObject(hFile, ObjectNameInformation, pObjectName, 0, &dwSize);
-    if (dwSize)
-    {
-        pObjectName = (OBJECT_NAME_INFORMATION*)ExAllocatePoolWithTag(NonPagedPoolNx, dwSize, POOL_TAG);
-        if (pObjectName) {
-            status = ZwQueryObject(hFile, ObjectNameInformation, pObjectName, dwSize, &dwSize);
-            pObjectName->Name.Buffer = pObjectName->NameBuffer;
-        }
-    }
-
-    if (status == STATUS_SUCCESS && pObjectName) {
-        return pObjectName;
-    }
-
-    if (pObjectName) {
-        ExFreePoolWithTag(pObjectName, POOL_TAG);
-        pObjectName = nullptr;
-    }
-    return nullptr;
 }

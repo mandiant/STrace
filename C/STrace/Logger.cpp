@@ -533,7 +533,7 @@ LogpFinalizeBufferInfo(
     NTSTATUS Status;
 
     NT_ASSERT(Info != NULL);
-
+    
     // Closing the log buffer flush thread.
     if (Info->BufferFlushThreadHandle)
     {
