@@ -258,8 +258,14 @@ Return Value:
     UNREFERENCED_PARAMETER(DeviceObject);
 
     if (LogInitialized) {
+        LogIrpShutdownHandler();
         LogDestroy();
         LogInitialized = false;
+    }
+
+    if (TlsLookasideInitialized) {
+        ExDeleteLookasideListEx(&TLSLookasideList);
+        TlsLookasideInitialized = false;
     }
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -285,16 +291,6 @@ Return Value:
 --*/
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-
-    if (LogInitialized) {
-        LogIrpShutdownHandler();
-        LogInitialized = false;
-    }
-
-    if (TlsLookasideInitialized) {
-        ExDeleteLookasideListEx(&TLSLookasideList);
-        TlsLookasideInitialized = false;
-    }
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
