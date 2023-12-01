@@ -232,12 +232,49 @@ Return Value:
 --*/
 {
     UNREFERENCED_PARAMETER(DeviceObject);
+    NTSTATUS Status = STATUS_SUCCESS;
 
-    Irp->IoStatus.Status = STATUS_SUCCESS;
+    DBGPRINT("DeviceCreate Entry\r\n");
+
+    if (!LogInitialized) {
+        Status = LogInitialize(LogPutLevelInfo | LogOptDisableFunctionName | LogOptDisableAppend, L"\\??\\C:\\strace.log");
+        if (!NT_SUCCESS(Status))
+        {
+            DBGPRINT("Failed to initialize logger interface. Status = 0x%08x\r\n", Status);
+            return Status;
+        }
+        LogInitialized = true;
+    }
+
+    if (!TlsLookasideInitialized) {
+        Status = ExInitializeLookasideListEx(&TLSLookasideList, NULL, NULL, PagedPool, EX_LOOKASIDE_LIST_EX_FLAGS_RAISE_ON_FAIL, sizeof(TLSData), DRIVER_POOL_TAG, NULL);
+        if (!NT_SUCCESS(Status)) {
+            DBGPRINT("Failed to initialize TLS lookaside list. Status = 0x%08x\r\n", Status);
+            goto exit;
+        }
+        TlsLookasideInitialized = true;
+    }
+
+    DBGPRINT("DeviceCreate Exit\r\n");
+exit:
+    if (!NT_SUCCESS(Status))
+    {
+        if (LogInitialized) {
+            LogDestroy();
+            LogInitialized = false;
+        }
+
+        if (TlsLookasideInitialized) {
+            ExDeleteLookasideListEx(&TLSLookasideList);
+            TlsLookasideInitialized = false;
+        }
+    }
+
+    Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS
@@ -256,17 +293,6 @@ Return Value:
 --*/
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-
-    if (LogInitialized) {
-        LogIrpShutdownHandler();
-        LogDestroy();
-        LogInitialized = false;
-    }
-
-    if (TlsLookasideInitialized) {
-        ExDeleteLookasideListEx(&TLSLookasideList);
-        TlsLookasideInitialized = false;
-    }
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
@@ -375,25 +401,6 @@ Return Value:
     IrpStack = IoGetCurrentIrpStackLocation(Irp);
     Ioctl = IrpStack->Parameters.DeviceIoControl.IoControlCode;
 
-    if (!LogInitialized) {
-        Status = LogInitialize(LogPutLevelInfo | LogOptDisableFunctionName | LogOptDisableAppend, L"\\??\\C:\\strace.log");
-        if (!NT_SUCCESS(Status))
-        {
-            DBGPRINT("Failed to initialize logger interface. Status = 0x%08x\r\n", Status);
-            goto exit;
-        }
-        LogInitialized = true;
-    }
-   
-    if (!TlsLookasideInitialized) {
-        Status = ExInitializeLookasideListEx(&TLSLookasideList, NULL, NULL, PagedPool, EX_LOOKASIDE_LIST_EX_FLAGS_RAISE_ON_FAIL, sizeof(TLSData), DRIVER_POOL_TAG, NULL);
-        if (!NT_SUCCESS(Status)) {
-            DBGPRINT("Failed to initialize TLS lookaside list. Status = 0x%08x\r\n", Status);
-            goto exit;
-        }
-        TlsLookasideInitialized = true;
-    }
-
     switch (Ioctl)
     {
     case IOCTL_LOADDLL:
@@ -409,7 +416,6 @@ Return Value:
         break;
     }
     
-exit:
     Irp->IoStatus.Information = 0;
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -434,6 +440,17 @@ Return Value:
 --*/
 {
     UNICODE_STRING  DosDevicesLinkName;
+
+    if (LogInitialized) {
+        LogIrpShutdownHandler();
+        LogDestroy();
+        LogInitialized = false;
+    }
+
+    if (TlsLookasideInitialized) {
+        ExDeleteLookasideListEx(&TLSLookasideList);
+        TlsLookasideInitialized = false;
+    }
 
     //
     // Unregister any registered ETW providers.
@@ -502,10 +519,9 @@ NTSTATUS DriverEntry( PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath 
 
     Status = IoCreateSymbolicLink(&DosDevicesLinkName, &NtDeviceName);
     
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status)){
         IoDeleteDevice(DriverObject->DeviceObject);
         return Status;
     }
-    
     return STATUS_SUCCESS;
 }
