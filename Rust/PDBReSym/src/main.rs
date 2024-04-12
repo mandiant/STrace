@@ -428,7 +428,7 @@ async fn main() {
     .subcommand(clap::Command::new("symbolicate")
         .about("Symbolicate the given logfile and write out the symbolicated version. May download PDBs as necessary")
         .arg(
-            clap::Arg::new("logfile").help("Path to strace log file").required(true)
+            clap::Arg::new("logfile").help("Path to log file, format is lines containing: [full_module_path] +0xOFFSET").required(true)
         )
         .arg(
             clap::Arg::new("outfile").help("Path to write symbolicated output file").required(true)
