@@ -109,8 +109,8 @@ public:
 
 		auto kproc = PsGetCurrentProcess();
 
-		// this name is truncated by the OS
-		strcpy_s(processName, PsGetProcessImageFileName(kproc));
+		// have to read the PEB for full name
+		GetFullProcessName(processName, sizeof(processName));
 		isWow64 = PsGetProcessWow64Process(kproc) != NULL;
 	}
 
@@ -205,17 +205,17 @@ private:
 					return false;
 				}
 
-				if (!pPeb32->Ldr)
+				PPEB_LDR_DATA32 Ldr = (PPEB_LDR_DATA32)pPeb32->Ldr;
+				if (!Ldr)
 				{
 					return false;
 				}
 
 				// Search in InLoadOrderModuleList
-				for (PLIST_ENTRY32 pListEntry = (PLIST_ENTRY32)((PPEB_LDR_DATA32)pPeb32->Ldr)->InLoadOrderModuleList.Flink;
-					pListEntry != &((PPEB_LDR_DATA32)pPeb32->Ldr)->InLoadOrderModuleList;
+				for (PLIST_ENTRY32 pListEntry = (PLIST_ENTRY32)Ldr->InLoadOrderModuleList.Flink;
+					pListEntry != &Ldr->InLoadOrderModuleList;
 					pListEntry = (PLIST_ENTRY32)pListEntry->Flink)
 				{
-
 					PLDR_DATA_TABLE_ENTRY32 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY32, InLoadOrderLinks);
 
 					// unicode_string from wchar_t*
@@ -262,6 +262,71 @@ private:
 					RtlUnicodeStringToAnsiString(&ansi, &pEntry->FullDllName, FALSE);
 					callback(modulePath, (uint64_t)pEntry->DllBase, (uint64_t)pEntry->SizeOfImage);
 				}
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+		return true;
+	}
+
+	bool GetFullProcessName(char* ImagePathNarrowBuffer, uint16_t ImagePathNarrowBufferLength) {
+		__try {
+			if (isWow64)
+			{
+				PPEB32 pPeb32 = (PPEB32)PsGetProcessWow64Process(PsGetCurrentProcess());
+				if (pPeb32 == NULL)
+				{
+					return false;
+				}
+
+				if (!pPeb32->ProcessParameters)
+				{
+					return false;
+				}
+
+				PRTL_USER_PROCESS_PARAMETERS32 pUserProcessParams = (PRTL_USER_PROCESS_PARAMETERS32)pPeb32->ProcessParameters;
+				UNICODE_STRING32 ImagePathName32 = pUserProcessParams->ImagePathName;
+
+				// copy values to 64bit structure which is padded and aligned correctly
+				UNICODE_STRING ImagePath = UNICODE_STRING{
+					.Length = ImagePathName32.Length,
+					.MaximumLength = ImagePathName32.MaximumLength,
+					.Buffer = (PWCH)ImagePathName32.Buffer
+				};
+
+				memset(ImagePathNarrowBuffer, 0, ImagePathNarrowBufferLength);
+				ANSI_STRING ansi = { 0 };
+				ansi.Buffer = ImagePathNarrowBuffer;
+				ansi.Length = 0;
+				ansi.MaximumLength = ImagePathNarrowBufferLength;
+
+				RtlUnicodeStringToAnsiString(&ansi, &ImagePath, FALSE);
+			}
+			// Native process
+			else
+			{
+				PPEB pPeb = PsGetProcessPeb(PsGetCurrentProcess());
+				if (!pPeb)
+				{
+					return false;
+				}
+
+				if (!pPeb->ProcessParameters)
+				{
+					return false;
+				}
+
+				PRTL_USER_PROCESS_PARAMETERS pUserProcessParams = (PRTL_USER_PROCESS_PARAMETERS)pPeb->ProcessParameters;
+				UNICODE_STRING ImagePath = pUserProcessParams->ImagePathName;
+
+				memset(ImagePathNarrowBuffer, 0, ImagePathNarrowBufferLength);
+				ANSI_STRING ansi = { 0 };
+				ansi.Buffer = ImagePathNarrowBuffer;
+				ansi.Length = 0;
+				ansi.MaximumLength = ImagePathNarrowBufferLength;
+
+				RtlUnicodeStringToAnsiString(&ansi, &ImagePath, FALSE);
 			}
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
