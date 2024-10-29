@@ -241,14 +241,15 @@ private:
 					return false;
 				}
 
+				PPEB_LDR_DATA Ldr = pPeb->Ldr;
 				if (!pPeb->Ldr)
 				{
 					return false;
 				}
 
 				// Search in InLoadOrderModuleList
-				for (PLIST_ENTRY pListEntry = pPeb->Ldr->InLoadOrderModuleList.Flink;
-					pListEntry != &pPeb->Ldr->InLoadOrderModuleList;
+				for (PLIST_ENTRY pListEntry = Ldr->InLoadOrderModuleList.Flink;
+					pListEntry != &Ldr->InLoadOrderModuleList;
 					pListEntry = pListEntry->Flink)
 				{
 					PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
@@ -271,68 +272,23 @@ private:
 	}
 
 	bool GetFullProcessName(char* ImagePathNarrowBuffer, uint16_t ImagePathNarrowBufferLength) {
-		__try {
-			if (isWow64)
-			{
-				PPEB32 pPeb32 = (PPEB32)PsGetProcessWow64Process(PsGetCurrentProcess());
-				if (pPeb32 == NULL)
-				{
-					return false;
-				}
+		UNICODE_STRING* procNameWide = NULL;
+		if (SeLocateProcessImageName(PsGetCurrentProcess(), &procNameWide) == STATUS_SUCCESS) {
+			
+			memset(ImagePathNarrowBuffer, 0, ImagePathNarrowBufferLength);
+			ANSI_STRING ansi = { 0 };
+			ansi.Buffer = ImagePathNarrowBuffer;
+			ansi.Length = 0;
+			ansi.MaximumLength = ImagePathNarrowBufferLength;
 
-				if (!pPeb32->ProcessParameters)
-				{
-					return false;
-				}
-
-				PRTL_USER_PROCESS_PARAMETERS32 pUserProcessParams = (PRTL_USER_PROCESS_PARAMETERS32)pPeb32->ProcessParameters;
-				UNICODE_STRING32 ImagePathName32 = pUserProcessParams->ImagePathName;
-
-				// copy values to 64bit structure which is padded and aligned correctly
-				UNICODE_STRING ImagePath = UNICODE_STRING{
-					.Length = ImagePathName32.Length,
-					.MaximumLength = ImagePathName32.MaximumLength,
-					.Buffer = (PWCH)ImagePathName32.Buffer
-				};
-
-				memset(ImagePathNarrowBuffer, 0, ImagePathNarrowBufferLength);
-				ANSI_STRING ansi = { 0 };
-				ansi.Buffer = ImagePathNarrowBuffer;
-				ansi.Length = 0;
-				ansi.MaximumLength = ImagePathNarrowBufferLength;
-
-				RtlUnicodeStringToAnsiString(&ansi, &ImagePath, FALSE);
-			}
-			// Native process
-			else
-			{
-				PPEB pPeb = PsGetProcessPeb(PsGetCurrentProcess());
-				if (!pPeb)
-				{
-					return false;
-				}
-
-				if (!pPeb->ProcessParameters)
-				{
-					return false;
-				}
-
-				PRTL_USER_PROCESS_PARAMETERS pUserProcessParams = (PRTL_USER_PROCESS_PARAMETERS)pPeb->ProcessParameters;
-				UNICODE_STRING ImagePath = pUserProcessParams->ImagePathName;
-
-				memset(ImagePathNarrowBuffer, 0, ImagePathNarrowBufferLength);
-				ANSI_STRING ansi = { 0 };
-				ansi.Buffer = ImagePathNarrowBuffer;
-				ansi.Length = 0;
-				ansi.MaximumLength = ImagePathNarrowBufferLength;
-
-				RtlUnicodeStringToAnsiString(&ansi, &ImagePath, FALSE);
+			if (RtlUnicodeStringToAnsiString(&ansi, procNameWide, FALSE) == STATUS_SUCCESS) {
+				ExFreePool(procNameWide);
+				return true;
+			} else {
+				ExFreePool(procNameWide);
 			}
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			return false;
-		}
-		return true;
+		return false;
 	}
 
 	void UnicodeStrToNarrow(char buf[100], const char* fmt, ...) {
