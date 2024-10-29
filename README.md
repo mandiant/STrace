@@ -30,7 +30,7 @@ This project is largely split between it's C++ and Rust components. The C driver
 
 # Installation & Setup
 Setup Visual Studio w/ DDK
-* Instal VS2022 + Windows SDK + Windows DDK. In that order, with matching SDK and WDK build numbers. See https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk#download-icon-for-visual-studio-step-1-install-visual-studio-2022
+* Install VS2022 + Windows SDK + Windows DDK. In that order, with matching SDK and WDK build numbers. See https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk#download-icon-for-visual-studio-step-1-install-visual-studio-2022
 * Change STrace driver project Windows SDK settings to the installed WDK version. STrace->Properties->General->Windows SDK Version (Your WDK build number).
 
 Build the driver and cli, move the files to the same folder as the script, then run the powershell script in install folder as admin:
