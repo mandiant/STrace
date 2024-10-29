@@ -29,6 +29,7 @@ This project is largely split between it's C++ and Rust components. The C driver
 * Rust log symbolicator to symbolicate C++ driver stack traces. Doesn't use DIA SDK.
 
 # Installation & Setup
+Instal VS2023 + Windows SDK + Windows DDK. In that order, with matching SDK and WDK build numbers. See https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk#download-icon-for-visual-studio-step-1-install-visual-studio-2022
 
 Build the driver and cli, move the files to the same folder as the script, then run the powershell script in install folder as admin:
 ```
