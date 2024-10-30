@@ -12,6 +12,25 @@
 #include "Constants.h"
 #include "NtStructs.h"
 
+// This is a very special read/write routine that interacts with MmAccessFault to avoid PAGE_FAULT_IN_NON_PAGED area bugchecks. 
+// When dtrace is loaded this routines start/end address is recorded. Function boundary information is retreived via the unwind
+// information as looked up by RtlLookupFunctionEntry. Any faults that occur within this boundary
+// will _not_ BugCheck due to hardcoded logic in the kernel fault routines. Instead, when access faults are thrown the kernel
+// will check if this routine generated them and return STATUS_ACCESS_VIOLATION instead. 
+
+/**
+SafeAddress: An address guaranteed to be paged in, in read mode this is the destination, in write mode it is the source
+UnsafeAddress: A potentially paged out or inaccessible address/region. In read mode this is the source, in write it is the destination
+NumberOfBytes: How many bytes in total to read or write
+ChunkSize: How wide should reads/writes occur. NumberOfBytes is walked in a for loop and read/writes occur using this chunksize. ChunkSize must be a multiple of NumberOfBytes, overhanging bytes are not operated on.
+The available sizes are only 1, 2, 4, or 8. All other chunksizes are a no-operation
+DoRead: Should a read or write occur, in write mode the order of SafeAddress and UnsafeAddress are interpreted differently with respect to source/destination.
+
+NOTE: to ensure proper unwind information is generated for RtlLookupFunctionEntry, the memory core must be in a __try __except block. This block
+doesn't have to do anything important, but the kernel uses it to determine the bounds of the function and then ignore faults in that boundary.
+**/
+extern "C" __declspec(dllexport) BOOLEAN TraceAccessMemory(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
+
 class MachineState
 {
 public:
@@ -196,72 +215,115 @@ private:
 
 	template<typename T>
 	bool EnumUserModeModules(T&& callback) {
+		// copy the usermode structs to kernel. They can be stomped/changed out from under us
 		__try {
 			if (isWow64)
 			{
-				PPEB32 pPeb32 = (PPEB32)PsGetProcessWow64Process(PsGetCurrentProcess());
-				if (pPeb32 == NULL)
+				if (!PsGetProcessWow64Process(PsGetCurrentProcess())) {
+					return false;
+				}
+
+				PEB32 peb32 = { 0 };
+				if (!TraceAccessMemory(&peb32, (ULONG_PTR)PsGetProcessWow64Process(PsGetCurrentProcess()), sizeof(peb32), 1, true) || !peb32.Ldr)
 				{
 					return false;
 				}
 
-				PPEB_LDR_DATA32 Ldr = (PPEB_LDR_DATA32)pPeb32->Ldr;
-				if (!Ldr)
-				{
+				PEB_LDR_DATA32 Ldr = { 0 };
+				if (!TraceAccessMemory(&Ldr, (ULONG_PTR)peb32.Ldr, sizeof(Ldr), 1, true)) {
 					return false;
 				}
 
-				// Search in InLoadOrderModuleList
-				for (PLIST_ENTRY32 pListEntry = (PLIST_ENTRY32)Ldr->InLoadOrderModuleList.Flink;
-					pListEntry != &Ldr->InLoadOrderModuleList;
-					pListEntry = (PLIST_ENTRY32)pListEntry->Flink)
-				{
-					PLDR_DATA_TABLE_ENTRY32 pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY32, InLoadOrderLinks);
+				ULONG_PTR pListEntryHead = (ULONG_PTR)&Ldr.InLoadOrderModuleList;
+				ULONG_PTR pCurListEntry = pListEntryHead;
+
+				LIST_ENTRY32 listEntry = { 0 };
+				if (!TraceAccessMemory(&listEntry, pCurListEntry, sizeof(listEntry), 1, true)) {
+					return false;
+				}
+
+				while (listEntry.Flink != pListEntryHead) {
+					LDR_DATA_TABLE_ENTRY32 entry = { 0 };
+					if (!TraceAccessMemory(&entry, (ULONG_PTR)CONTAINING_RECORD(pCurListEntry, LDR_DATA_TABLE_ENTRY32, InLoadOrderLinks), sizeof(entry), 1, true)) {
+						return false;
+					}
+
+					// just check it's a valid string buffer
+					wchar_t test = 0;
+					if (!TraceAccessMemory(&test, (ULONG_PTR)entry.FullDllName.Buffer, sizeof(test), 1, true)) {
+						return false;
+					}
 
 					// unicode_string from wchar_t*
 					UNICODE_STRING ustr;
-					RtlUnicodeStringInit(&ustr, (PWCH)pEntry->FullDllName.Buffer);
+					RtlUnicodeStringInit(&ustr, (PWCH)entry.FullDllName.Buffer);
 
 					char modulePath[MAX_PATH] = { 0 };
-					ANSI_STRING ansi = {0};
+					ANSI_STRING ansi = { 0 };
 					ansi.Buffer = modulePath;
 					ansi.Length = 0;
 					ansi.MaximumLength = sizeof(modulePath);
 
 					RtlUnicodeStringToAnsiString(&ansi, &ustr, FALSE);
-					callback(modulePath, (uint64_t)pEntry->DllBase, (uint64_t)pEntry->SizeOfImage);
+					callback(modulePath, (uint64_t)entry.DllBase, (uint64_t)entry.SizeOfImage);
+
+					pCurListEntry = (ULONG_PTR)listEntry.Flink;
+					if (!TraceAccessMemory(&listEntry, pCurListEntry, sizeof(listEntry), 1, true)) {
+						return false;
+					}
 				}
 			}
 			// Native process
 			else
 			{
-				PPEB pPeb = PsGetProcessPeb(PsGetCurrentProcess());
-				if (!pPeb)
+				if (!PsGetProcessPeb(PsGetCurrentProcess())) {
+					return false;
+				}
+
+				PEB peb = { 0 };
+				if (!TraceAccessMemory(&peb, (ULONG_PTR)PsGetProcessPeb(PsGetCurrentProcess()), sizeof(peb), 1, true) || !peb.Ldr)
 				{
 					return false;
 				}
 
-				PPEB_LDR_DATA Ldr = pPeb->Ldr;
-				if (!pPeb->Ldr)
-				{
+				PEB_LDR_DATA Ldr = { 0 };
+				if (!TraceAccessMemory(&Ldr, (ULONG_PTR)peb.Ldr, sizeof(Ldr), 1, true)) {
 					return false;
 				}
 
-				// Search in InLoadOrderModuleList
-				for (PLIST_ENTRY pListEntry = Ldr->InLoadOrderModuleList.Flink;
-					pListEntry != &Ldr->InLoadOrderModuleList;
-					pListEntry = pListEntry->Flink)
-				{
-					PLDR_DATA_TABLE_ENTRY pEntry = CONTAINING_RECORD(pListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+				ULONG_PTR pListEntryHead = (ULONG_PTR)&Ldr.InLoadOrderModuleList;
+				ULONG_PTR pCurListEntry = pListEntryHead;
+
+				LIST_ENTRY listEntry = { 0 };
+				if (!TraceAccessMemory(&listEntry, pCurListEntry, sizeof(listEntry), 1, true)) {
+					return false;
+				}
+
+				while ((ULONG_PTR)listEntry.Flink != pListEntryHead) {
+					LDR_DATA_TABLE_ENTRY entry = { 0 };
+					if (!TraceAccessMemory(&entry, (ULONG_PTR)CONTAINING_RECORD(pCurListEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks), sizeof(entry), 1, true)) {
+						return false;
+					}
+
+					// just check it's a valid string buffer
+					wchar_t test = 0;
+					if (!TraceAccessMemory(&test, (ULONG_PTR)entry.FullDllName.Buffer, sizeof(test), 1, true)) {
+						return false;
+					}
 
 					char modulePath[MAX_PATH] = { 0 };
-					ANSI_STRING ansi = {0};
+					ANSI_STRING ansi = { 0 };
 					ansi.Buffer = modulePath;
 					ansi.Length = 0;
 					ansi.MaximumLength = sizeof(modulePath);
 
-					RtlUnicodeStringToAnsiString(&ansi, &pEntry->FullDllName, FALSE);
-					callback(modulePath, (uint64_t)pEntry->DllBase, (uint64_t)pEntry->SizeOfImage);
+					RtlUnicodeStringToAnsiString(&ansi, &entry.FullDllName, FALSE);
+					callback(modulePath, (uint64_t)entry.DllBase, (uint64_t)entry.SizeOfImage);
+
+					pCurListEntry = (ULONG_PTR)listEntry.Flink;
+					if (!TraceAccessMemory(&listEntry, pCurListEntry, sizeof(listEntry), 1, true)) {
+						return false;
+					}
 				}
 			}
 		}

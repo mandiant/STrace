@@ -1,4 +1,5 @@
 #include "DynamicTrace.h"
+#include "Interface.h"
 
 TraceApi* TraceSystemApi;
 

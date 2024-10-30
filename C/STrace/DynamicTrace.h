@@ -184,25 +184,6 @@ struct TraceCallbacks
 	void* pCallbacks[9];
 };
 
-// This is a very special read/write routine that interacts with MmAccessFault to avoid PAGE_FAULT_IN_NON_PAGED area bugchecks. 
-// When dtrace is loaded this routines start/end address is recorded. Function boundary information is retreived via the unwind
-// information as looked up by RtlLookupFunctionEntry. Any faults that occur within this boundary
-// will _not_ BugCheck due to hardcoded logic in the kernel fault routines. Instead, when access faults are thrown the kernel
-// will check if this routine generated them and return STATUS_ACCESS_VIOLATION instead. 
-
-/**
-SafeAddress: An address guaranteed to be paged in, in read mode this is the destination, in write mode it is the source
-UnsafeAddress: A potentially paged out or inaccessible address/region. In read mode this is the source, in write it is the destination
-NumberOfBytes: How many bytes in total to read or write
-ChunkSize: How wide should reads/writes occur. NumberOfBytes is walked in a for loop and read/writes occur using this chunksize. ChunkSize must be a multiple of NumberOfBytes, overhanging bytes are not operated on.
-The available sizes are only 1, 2, 4, or 8. All other chunksizes are a no-operation
-DoRead: Should a read or write occur, in write mode the order of SafeAddress and UnsafeAddress are interpreted differently with respect to source/destination.
-
-NOTE: to ensure proper unwind information is generated for RtlLookupFunctionEntry, the memory core must be in a __try __except block. This block
-doesn't have to do anything important, but the kernel uses it to determine the bounds of the function and then ignore faults in that boundary.
-**/
-extern "C" __declspec(dllexport) BOOLEAN TraceAccessMemory(PVOID SafeAddress, ULONG_PTR UnsafeAddress, SIZE_T NumberOfBytes, SIZE_T ChunkSize, BOOLEAN DoRead);
-
 extern TraceApi* TraceSystemApi;
 
 // These must be free functions
