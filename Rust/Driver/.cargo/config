@@ -2,6 +2,7 @@
 target = "x86_64-pc-windows-msvc"
 
 rustflags = [
+    "-C", "panic=abort",
     "-C", "force-unwind-tables=on",
 
     # Pre Link Args

@@ -1,14 +1,12 @@
 [profile.dev]
 panic = "abort"
-lto = "thin"
-opt-level = 0
+lto = true
 debug = 2
 debug-assertions = true
 
 [profile.release]
 panic = "abort"
-lto = "thin"
-opt-level = 2
+lto = true
 debug = 2
 debug-assertions = true
 
